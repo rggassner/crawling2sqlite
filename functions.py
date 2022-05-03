@@ -1,4 +1,5 @@
 import gzip
+import zlib
 import signal
 import ssl
 import urllib.error
