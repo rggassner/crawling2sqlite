@@ -10,3 +10,5 @@ The expressions have been tested against more than 10 million urls, but there ar
 Requirements:
 
 pip3 install pyOpenSSL
+pip3 install django
+pip3 install bs4
