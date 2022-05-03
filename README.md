@@ -6,3 +6,7 @@ You should be able to run multiple concurrent instance on the same database, but
 This is a study project I used to learn about decorators, sqlite and beautiful soup.
 
 The expressions have been tested against more than 10 million urls, but there are still many content types and applications that are not covered by the regular expressions. The generic expression -> function approach was intended to allow fast development of new features.
+
+Requirements:
+
+pip3 install pyOpenSSL
