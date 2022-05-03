@@ -12,3 +12,9 @@ Requirements:
 pip3 install pyOpenSSL
 pip3 install django
 pip3 install bs4
+
+## viewing images
+
+I recomend using feh to see the results in the image directory
+
+feh -FZzD 1
