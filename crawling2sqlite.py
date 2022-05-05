@@ -5,9 +5,18 @@ from urllib.parse import urljoin, urlsplit
 from bs4 import BeautifulSoup
 from functions import read_web
 
-iterations = 100
 initial_url = "https://www.uol.com.br"
-con = sqlite3.connect("crawler.db", timeout=60)
+
+#Every iteration one random url for every unique domain in the database is crawled.
+iterations = 100
+
+#The use of in memory sqlite increases performance but is resource intensive
+#and makes impossible to run multiple simultaneous processes, since databases
+#would be out of sync.
+in_memory_sqlite = True
+
+#Database will be dumped to file every nth visited urls
+dump_every = 1000
 
 # block_list do not crawl these domains. Some urls might be inserted, added from allow lists, but they are never crawled.
 url_regex_block_list = [
@@ -125,14 +134,17 @@ def sanitize_url(url):
     url = re.sub(r"^‘(.*)’$", r"\1", url)
     url = re.sub(r'^"(.*)\'$', r"\1", url)
     url = re.sub(r"^\'(.*)\'$", r"\1", url)
+    url = re.sub(r'^”(.*)″$', r"\1", url)        
     url = re.sub(r"^(.+)#.*$", r"\1", url)
     url = re.sub("^lhttps://", "https://", url)
-    url = re.sub("^Mhttps://", "https://", url)    
+    url = re.sub("^Mhttps://", "https://", url)  
+    url = re.sub("^Mh ttp://", "http://", url)  
     url = re.sub("^http:s//", "https://", url)
     url = re.sub("^hthttps://", "https://", url)
     url = re.sub("^httsp://", "https://", url)
     url = re.sub("^htp://http//", "http://", url)
     url = re.sub("^hhttps://", "https://", url)
+    url = re.sub("^htttps://", "https://", url)
     url = re.sub("^htpp://", "http://", url)
     url = re.sub("^httpa://", "https://", url)
     url = re.sub("^https:https://", "https://", url)
@@ -279,8 +291,8 @@ def unsafe_character_url(args):
         r"^digitalassistant:",
         r"^chrome\-extension:",
         r"^ms\-windows\-store:",
-        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:)",
-        r"^(javascript:|javacscript:|javacript:|javascripy:|javscript:|javascript\.|javascirpt:|javascript;|javascriot:|javascritp:|havascript:|javescript:|javascrip:|javascrpit:)",
+        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:|tek:)",
+        r"^(javascript:|javacscript:|javacript:|javascripy:|javscript:|javascript\.|javascirpt:|javascript;|javascriot:|javascritp:|havascript:|javescript:|javascrip:|javascrpit:|js:|javascripr:|javastript:|javascipt:|javsacript:)",
     ]
 )
 def do_nothing_url(args):
@@ -297,12 +309,12 @@ def full_url(args):
 
 @function_for_url(
     [
-        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:)"
+        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:)"
     ]
 )
 def email_url(args):
     address_search = re.search(
-        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:)(.*)",
+        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:)(.*)",
         args[0],
         flags=re.I | re.U,
     )
@@ -446,6 +458,7 @@ def content_type_download(args):
         r"^image/svg\+xml$",
         r"^image/vnd\.wap\.wbmp$",
         r"^image/vnd\.microsoft\.icon$",
+        r"^application/jpg$",        
     ]
 )
 def content_type_images(args):
@@ -561,10 +574,13 @@ def content_type_images(args):
         r"^text/x\-bibtex$",
         r"^text/javascript$",
         r"^text/x\-comma\-separated\-values$",
+        r"^text/html, charset=iso\-8859\-1$",        
         r"^video/mp4$",
         r"^video/ogg$",
         r"^video/webm$",
+        r"^video/x\-flv$",        
         r"^video/x\-ms\-wmv$",
+        r"^video/x\-ms\-asf$",
         r"^video/x\-msvideo$",
         r"^x\-application/octet\-stream$",
     ]
@@ -674,12 +690,32 @@ def stats():
         )
     )
 
+if in_memory_sqlite:    
+    source_con = sqlite3.connect("crawler.db", timeout=60)
+    con = sqlite3.connect(':memory:',timeout=60)
+    source_con.backup(con)
+else:
+    con = sqlite3.connect("crawler.db", timeout=60)
 
+processed_count=0
 for iteration in range(iterations):
     random_urls = get_random_unvisited_domains()
     for target_url in random_urls:
         if not is_block_listed(target_url[1]) and is_allow_listed(target_url[1]):
-            get_page(target_url[0])
+            try:
+                get_page(target_url[0])
+                if processed_count >= dump_every:
+                    con.backup(source_con)
+                    processed_count=0
+                else:
+                    processed_count=processed_count+1
+            except UnicodeEncodeError:
+                pass
+    if in_memory_sqlite:
+        con.backup(source_con)
     print("End of iteration {}".format(iteration))
     stats()
+
+if in_memory_sqlite:
+    source_con.close()
 con.close()
