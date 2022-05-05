@@ -83,6 +83,8 @@ def read_web(url):
         return False
     except gzip.BadGzipFile as e:
         return False
+    except zlib.error as e:
+        return False
     return [content, content_type]
 
 # encode whitespaces from urls
