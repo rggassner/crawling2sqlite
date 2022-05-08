@@ -4,7 +4,7 @@ import signal
 import ssl
 import urllib.error
 import urllib.request
-from http.client import IncompleteRead, InvalidURL, BadStatusLine
+from http.client import IncompleteRead, InvalidURL, BadStatusLine, HTTPException
 from io import BytesIO
 from socket import timeout
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
@@ -84,6 +84,8 @@ def read_web(url):
     except gzip.BadGzipFile as e:
         return False
     except zlib.error as e:
+        return False
+    except HTTPException as e:
         return False
     return [content, content_type]
 
