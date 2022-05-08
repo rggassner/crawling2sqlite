@@ -125,7 +125,7 @@ def get_random_unvisited_domains():
 
 def sanitize_url(url):
     url = url.strip()
-    url = url.rstrip()
+    url = url.rstrip()      
     url = re.sub('^“(.*)"', "\1", url)
     url = re.sub(r"^”(.*)”$", r"\1", url)
     url = re.sub(r"^“(.*)“$", r"\1", url)
@@ -136,39 +136,7 @@ def sanitize_url(url):
     url = re.sub(r"^\'(.*)\'$", r"\1", url)
     url = re.sub(r'^”(.*)″$', r"\1", url)        
     url = re.sub(r"^(.+)#.*$", r"\1", url)
-    url = re.sub("^lhttps://", "https://", url)
-    url = re.sub("^Mhttps://", "https://", url)  
-    url = re.sub("^Mh ttp://", "http://", url)  
-    url = re.sub("^http:s//", "https://", url)
-    url = re.sub("^hthttps://", "https://", url)
-    url = re.sub("^httsp://", "https://", url)
-    url = re.sub("^htp://http//", "http://", url)
-    url = re.sub("^hhttps://", "https://", url)
-    url = re.sub("^htttps://", "https://", url)
-    url = re.sub("^htpp://", "http://", url)
-    url = re.sub("^httpa://", "https://", url)
-    url = re.sub("^https:https://", "https://", url)
-    url = re.sub("^ttps://", "https://", url)
-    url = re.sub("^hhttp://", "http://", url)
-    url = re.sub("^http:/http://", "http://", url)
-    url = re.sub("^https https://", "https://", url)
-    url = re.sub("^httpshttps://", "https://", url)
-    url = re.sub("^https://https://", "https://", url)
-    url = re.sub("^“http://", "http://", url)
-    url = re.sub('^"https://', "https://", url)
-    url = re.sub("^http:www", "http://www", url)
-    url = re.sub("^httpd://", "https://", url)
-    url = re.sub("^https: //", "https://", url)
-    url = re.sub("^http2://", "https://", url)
-    url = re.sub("^https : //", "https://", url)
-    url = re.sub("^htttp://", "http://", url)
-    url = re.sub("^ttp://", "http://", url)
-    url = re.sub("^\(https://", "https://", url)
-    url = re.sub("^https%3A//", "https://", url)
-    url = re.sub("^%20https://", "https://", url)
-    url = re.sub("^%22mailto:", "mailto:", url)
     url = re.sub("^www\.", "http://www.", url)
-    url = re.sub("^httpqs://", "https://www.", url)
     if re.search(r"^http:[^/][^/]", url):
         url = re.sub("^http:", "http://", url)
     if re.search(r"^http:/[^/]", url):
@@ -177,8 +145,49 @@ def sanitize_url(url):
         url = re.sub("^https:", "https://", url)
     if re.search(r"^https:/[^/]", url):
         url = re.sub("^https:/", "https://", url)
+        
+    in_url=url
+    
+    url = re.sub("^[a-zA-Z\.“\(´]https://", "https://", url)  
+    url = re.sub("^[a-zA-Z\.“\(´]http://", "http://", url)  
+    url = re.sub("^https[a-zA-Z\.“\(´]://", "https://", url)  
+    url = re.sub("^http[\.“\(´]://", "http://", url)  
+    url = re.sub("^https: / /", "https://", url)  
+    url = re.sub("^://", "https://", url)      
+    url = re.sub("^htt://", "http://", url)    
+    url = re.sub("^Mh ttp://", "http://", url) 
+    url = re.sub("^htpps://", "https://", url) 
+    url = re.sub("^http:s//", "https://", url)
+    url = re.sub("^hthttps://", "https://", url)
+    url = re.sub("^httsp://", "https://", url)
+    url = re.sub("^htts://", "https://", url)    
+    url = re.sub("^htp://http//", "http://", url)
+    url = re.sub("^htttps://", "https://", url)
+    url = re.sub("^https:https://", "https://", url)
+    url = re.sub("^ttps://", "https://", url)
+    url = re.sub("^hhttp://", "http://", url)
+    url = re.sub("^http:/http://", "http://", url)
+    url = re.sub("^https https://", "https://", url)
+    url = re.sub("^httpshttps://", "https://", url)
+    url = re.sub("^https://https://", "https://", url)
+    url = re.sub('^"https://', "https://", url)
+    url = re.sub("^http:www", "http://www", url)
+    url = re.sub("^httpd://", "https://", url)
+    url = re.sub("^htps://", "https://", url)    
+    url = re.sub("^https: //", "https://", url)
+    url = re.sub("^http2://", "https://", url)
+    url = re.sub("^https : //", "https://", url)
+    url = re.sub("^htttp://", "http://", url)
+    url = re.sub("^ttp://", "http://", url)
+    url = re.sub("^https%3A//", "https://", url)
+    url = re.sub("^%20https://", "https://", url)
+    url = re.sub("^%22mailto:", "mailto:", url)
+    url = re.sub("^httpqs://", "https://www.", url)
+    if in_url != url:
+        print("URL SANITIZED:")
+        print("IN###-{}-".format(in_url))
+        print("OUT##-{}-".format(url))
     return url
-
 
 def get_words(soup, content_url):
     output = ""
@@ -202,7 +211,11 @@ def function_for_url(regexp_list):
 # url unsafe {}|\^~[]`
 # regex no need to escape '!', '"', '%', "'", ',', '/', ':', ';', '<', '=', '>', '@', and "`"
 @function_for_url(
-    [r"^(\/|\.\.\/|\.\/)", r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬]+$"]
+    [
+        r"^(\/|\.\.\/|\.\/)",
+        r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´ç�]+$",
+        r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´ç]*[\?\/][0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬:\"¶ç´]+$",
+    ]
 )
 def relative_url(args):
     out_url = urljoin(args[1], args[0])
@@ -238,6 +251,7 @@ def unsafe_character_url(args):
         r"^wss:",
         r"^mms:",
         r"^aim:",
+        r"^rtsp:",        
         r"^file:",
         r"^feed:",
         r"^itpc:",
@@ -258,6 +272,7 @@ def unsafe_character_url(args):
         r"^about:",
         r"^movie:",
         r"^rsync:",
+        r"^popup:",        
         r"^itmss:",
         r"^chrome:",
         r"^telnet:",
@@ -265,6 +280,7 @@ def unsafe_character_url(args):
         r"^magnet:",
         r"^vscode:",
         r"^mumble:",
+        r"^unsafe:",        
         r"^podcast:",
         r"^spotify:",
         r"^bitcoin:",
@@ -280,6 +296,7 @@ def unsafe_character_url(args):
         r"^applenewss:",
         r"^itms\-apps:",
         r"^itms\-beta:",
+        r"^santanderpf:",        
         r"^bitcoincash:",
         r"^android\-app:",
         r"^ms\-settings:",
@@ -291,8 +308,8 @@ def unsafe_character_url(args):
         r"^digitalassistant:",
         r"^chrome\-extension:",
         r"^ms\-windows\-store:",
-        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:|tek:)",
-        r"^(javascript:|javacscript:|javacript:|javascripy:|javscript:|javascript\.|javascirpt:|javascript;|javascriot:|javascritp:|havascript:|javescript:|javascrip:|javascrpit:|js:|javascripr:|javastript:|javascipt:|javsacript:)",
+        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:|tek:|sip:|to:|SAC:)",
+        r"^(javascript:|javacscript:|javacript:|javascripy:|javscript:|javascript\.|javascirpt:|javascript;|javascriot:|javascritp:|havascript:|javescript:|javascrip:|javascrpit:|js:|javascripr:|javastript:|javascipt:|javsacript:|javasript:|javascrit:|javascriptt:|ja vascript:|javascrtipt:|jasvascript:)",
     ]
 )
 def do_nothing_url(args):
@@ -309,12 +326,12 @@ def full_url(args):
 
 @function_for_url(
     [
-        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:)"
+        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:|Email para:|email :|email:)"
     ]
 )
 def email_url(args):
     address_search = re.search(
-        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:)(.*)",
+        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:|Email para:|email :|email:)(.*)",
         args[0],
         flags=re.I | re.U,
     )
@@ -351,7 +368,6 @@ def get_links(soup, content_url):
             print("Unexpected URL -{}- Reference URL -{}-".format(url, content_url))
     return True
 
-
 ###############################################################################
 # iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 def function_for_img(regexp_list):
@@ -364,7 +380,11 @@ def function_for_img(regexp_list):
 
 
 @function_for_img(
-    [r"^(\/|\.\.\/|\.\/)", r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬]+$"]
+    [
+     r"^(\/|\.\.\/|\.\/)",
+     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬íÇ]+$",
+     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´]*[\?\/][0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬:\"¶´]+$",        
+    ]
 )
 def relative_img(args):
     out_url = urljoin(args[1], args[0])
@@ -456,6 +476,7 @@ def content_type_download(args):
         r"^image/pjpeg$",
         r"^image/x\-icon$",
         r"^image/svg\+xml$",
+        r"^image/x\-ms\-bmp$",        
         r"^image/vnd\.wap\.wbmp$",
         r"^image/vnd\.microsoft\.icon$",
         r"^application/jpg$",        
@@ -471,6 +492,8 @@ def content_type_images(args):
     [
         r"^\*/\*$",
         r"^audio/ogg$",
+        r"^audio/mp3$",                
+        r"^audio/mp4$",        
         r"^audio/mpeg$",
         r"^audio/opus$",
         r"^application/pdf$",
@@ -479,13 +502,17 @@ def content_type_images(args):
         r"^application/zip$",
         r"^application/avi$",
         r"^application/doc$",
+        r"^application/xls$",        
         r"^application/rtf$",
         r"^application/ogg$",
         r"^application/csv$",
+        r"^application/docx$",        
+        r"^application/text$",        
         r"^application/json$",
         r"^application/mobi$",
         r"^application/gzip$",
         r"^application/save$",
+        r"^application/null$",        
         r"^application/\.zip$",
         r"^application/\.rar$",
         r"^application/\.pdf$",
@@ -505,13 +532,16 @@ def content_type_images(args):
         r"^application/rdf\+xml$",
         r"^application/download$",
         r"^application/xml\-dtd$",
-        r"^application/rss\+xml$",
+        r"^application/rss\+xml$", 
+        r"^application/hal\+json$",        
         r"^application/ttml\+xml$",
         r"^application/x\-msword$",
         r"^application/pgp\-keys$",
         r"^application/epub\+zip$",
         r"^application/atom\+xml$",
         r"^application/x\-bibtex$",
+        r"^application/pkix\-crl$",        
+        r"^application/x\-dosexec$",               
         r"^application/javascript$",
         r"^application/x\-mpegurl$",
         r"^application/postscript$",
@@ -521,32 +551,39 @@ def content_type_images(args):
         r"^application/pkix\-cert$",
         r"^application/x\-rss\+xml$",
         r"^application/x\-xpinstall$",
+        r"^application/java\-archive$",        
         r"^application/x\-javascript$",
         r"^application/x\-msdownload$",
         r"^application/x\-httpd\-php$",
         r"^application/octet\-stream$",
         r"^application/vnd\.ms\-word$",
+        r"^application/x\-executable$",                
         r"^application/pgp\-signature$",
         r"^application/vnd\.ms\-excel$",
         r"^application/force\-download$",
         r"^application/x\-msdos\-program$",
         r"^application/x\-iso9660\-image$",
         r"^application/vnd\.ogc\.wms_xml$",
+        r"^application/x\-x509\-ca\-cert$",                
         r"^application/x\-ms\-application$",                
         r"^application/x\-zip\-compressed$",
         r"^application/x\-rar\-compressed$",
-        r"^application/x\-debian\-package$",        
+        r"^application/x\-debian\-package$", 
+        r"^application/pdfcontent\-length:",                
         r"^application/vnd\.apple\.mpegurl$",
         r"^application/vnd\.ms\-powerpoint$",
         r"^application/x\-gtar\-compressed$",
         r"^application/x\-shockwave\-flash$",
         r"^application/x\-apple\-diskimage$",
+        r"^application/x\-java\-jnlp\-file$", 
         r"^application/x\-mobipocket\-ebook$",
+        r"^application/vnd\.ms\-officetheme$",        
         r"^application/x\-pkcs7\-certificates$",
         r"^application/x\-research\-info\-systems$",
         r"^application/vnd\.android\.package\-archive$",
         r"^application/vnd\.oasis\.opendocument\.text$",
         r"^application/vnd\.oasis\.opendocument\.spreadsheet$",
+        r"^application/vnd\.spring\-boot\.actuator\.v3\+json$",                
         r"^application/vnd\.oasis\.opendocument\.presentation$",
         r"^application/vnd\.openxmlformats\-officedocument\.spreadsheetml\.sheet$",
         r"^application/vnd\.openxmlformats\-officedocument\.wordprocessingml\.document$",
@@ -579,6 +616,7 @@ def content_type_images(args):
         r"^video/ogg$",
         r"^video/webm$",
         r"^video/x\-flv$",        
+        r"^video/quicktime$",        
         r"^video/x\-ms\-wmv$",
         r"^video/x\-ms\-asf$",
         r"^video/x\-msvideo$",
