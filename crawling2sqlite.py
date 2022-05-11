@@ -3,7 +3,7 @@ import re
 import sqlite3
 from urllib.parse import urljoin, urlsplit
 from bs4 import BeautifulSoup
-from functions import read_web
+from functions import read_web, content_type_image_regex
 
 initial_url = "https://www.uol.com.br"
 
@@ -13,7 +13,7 @@ iterations = 100
 #The use of in memory sqlite increases performance but is resource intensive
 #and makes impossible to run multiple simultaneous processes, since databases
 #would be out of sync.
-in_memory_sqlite = True
+in_memory_sqlite = False
 
 #Database will be dumped to file every nth visited urls
 dump_every = 1000
@@ -53,7 +53,7 @@ def create_database(initial_url):
     con = sqlite3.connect("crawler.db")
     cur = con.cursor()
     cur.execute(
-        """CREATE TABLE urls (url text, visited boolean, content_type text, source text, words text, host text, UNIQUE (url))"""
+        """CREATE TABLE urls (url text, visited boolean, content_type text, source text, words text, host text, resolution integer, UNIQUE (url))"""
     )
     cur.execute("""CREATE TABLE emails (url text, email text, UNIQUE (url,email))""")
     cur.execute(
@@ -81,10 +81,7 @@ def is_allow_listed(url):
 
 
 def insert_if_new_url(url, visited, source, content_type="", words=""):
-    # try:
     host = urlsplit(url)[1]
-    # except Exception as err:
-    #    return False
     cur = con.cursor()
     cur.execute(
         "insert or ignore into urls (url,visited,content_type,source,words,host) values (?,?,?,?,?,?)",
@@ -101,11 +98,11 @@ def insert_email(url, email):
     return True
 
 
-def update_url(url, visited, content_type, words=""):
+def update_url(url, visited, content_type, words="",source='href'):
     cur = con.cursor()
     cur.execute(
-        "update urls set (visited,content_type,words) = (?,?,?) where url = ?",
-        (visited, content_type, words, url),
+        "update urls set (visited,content_type,words,source) = (?,?,?,?) where url = ?",
+        (visited, content_type, words, source, url),
     )
     con.commit()
 
@@ -126,7 +123,7 @@ def get_random_unvisited_domains():
 def sanitize_url(url):
     url = url.strip()
     url = url.rstrip()      
-    url = re.sub('^“(.*)"', "\1", url)
+    url = re.sub(r'^“(.*)"', r"\1", url)
     url = re.sub(r"^”(.*)”$", r"\1", url)
     url = re.sub(r"^“(.*)“$", r"\1", url)
     url = re.sub(r'^"(.*)"$', r"\1", url)
@@ -145,9 +142,8 @@ def sanitize_url(url):
         url = re.sub("^https:", "https://", url)
     if re.search(r"^https:/[^/]", url):
         url = re.sub("^https:/", "https://", url)
-        
-    in_url=url
-    
+    url = re.sub("^ps://", "https://", url)          
+    url = re.sub("^ttps://", "https://", url)    
     url = re.sub("^[a-zA-Z\.“\(´]https://", "https://", url)  
     url = re.sub("^[a-zA-Z\.“\(´]http://", "http://", url)  
     url = re.sub("^https[a-zA-Z\.“\(´]://", "https://", url)  
@@ -157,14 +153,15 @@ def sanitize_url(url):
     url = re.sub("^htt://", "http://", url)    
     url = re.sub("^Mh ttp://", "http://", url) 
     url = re.sub("^htpps://", "https://", url) 
+    url = re.sub("^httpp://", "https://", url)     
     url = re.sub("^http:s//", "https://", url)
     url = re.sub("^hthttps://", "https://", url)
     url = re.sub("^httsp://", "https://", url)
     url = re.sub("^htts://", "https://", url)    
     url = re.sub("^htp://http//", "http://", url)
+    url = re.sub("^htp://", "http://", url)
     url = re.sub("^htttps://", "https://", url)
     url = re.sub("^https:https://", "https://", url)
-    url = re.sub("^ttps://", "https://", url)
     url = re.sub("^hhttp://", "http://", url)
     url = re.sub("^http:/http://", "http://", url)
     url = re.sub("^https https://", "https://", url)
@@ -183,10 +180,6 @@ def sanitize_url(url):
     url = re.sub("^%20https://", "https://", url)
     url = re.sub("^%22mailto:", "mailto:", url)
     url = re.sub("^httpqs://", "https://www.", url)
-    if in_url != url:
-        print("URL SANITIZED:")
-        print("IN###-{}-".format(in_url))
-        print("OUT##-{}-".format(url))
     return url
 
 def get_words(soup, content_url):
@@ -213,7 +206,7 @@ def function_for_url(regexp_list):
 @function_for_url(
     [
         r"^(\/|\.\.\/|\.\/)",
-        r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´ç�]+$",
+        r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´ç�í¦ã]+$",
         r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´ç]*[\?\/][0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬:\"¶ç´]+$",
     ]
 )
@@ -308,7 +301,7 @@ def unsafe_character_url(args):
         r"^digitalassistant:",
         r"^chrome\-extension:",
         r"^ms\-windows\-store:",
-        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:|tek:|sip:|to:|SAC:)",
+        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:|tek:|sip:|to:|SAC:|facetime-audio:|telefone:|telegram:|tel\+:|tal:)",
         r"^(javascript:|javacscript:|javacript:|javascripy:|javscript:|javascript\.|javascirpt:|javascript;|javascriot:|javascritp:|havascript:|javescript:|javascrip:|javascrpit:|js:|javascripr:|javastript:|javascipt:|javsacript:|javasript:|javascrit:|javascriptt:|ja vascript:|javascrtipt:|jasvascript:)",
     ]
 )
@@ -382,7 +375,7 @@ def function_for_img(regexp_list):
 @function_for_img(
     [
      r"^(\/|\.\.\/|\.\/)",
-     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬íÇ]+$",
+     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬íÇâã]+$",
      r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´]*[\?\/][0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬:\"¶´]+$",        
     ]
 )
@@ -406,10 +399,12 @@ def unsafe_character_img(args):
         r"^#",
         r"^$",
         r"^data:",
+        r"^about:",
+        r"^file:",
     ]
 )
 def do_nothing_img(args):
-    # Do nothing with these regex. They are kept here only as a guideline if you
+    # Do nothing with these matches. They are kept here only as a guideline if you
     # want to write your own functions for them
     return True
 
@@ -461,30 +456,10 @@ def content_type_download(args):
     return True
 
 
-@function_for_content_type(
-    [
-        r"^image/\*$",
-        r"^image/gif$",
-        r"^image/png$",
-        r"^image/bmp$",
-        r"^image/jpg$",
-        r"^image/any$",
-        r"^image/apng$",
-        r"^image/jpeg$",
-        r"^image/tiff$",
-        r"^image/webp$",
-        r"^image/pjpeg$",
-        r"^image/x\-icon$",
-        r"^image/svg\+xml$",
-        r"^image/x\-ms\-bmp$",        
-        r"^image/vnd\.wap\.wbmp$",
-        r"^image/vnd\.microsoft\.icon$",
-        r"^application/jpg$",        
-    ]
-)
+@function_for_content_type(content_type_image_regex)
 def content_type_images(args):
-    # Since we have an external downloader, update as not visited
-    update_url(args[0], 0, args[2])
+    # Since we have an external downloader, update as not visited, and mark as a img source
+    update_url(args[0], 0, args[2], source='img')
     return True
 
 
@@ -506,6 +481,8 @@ def content_type_images(args):
         r"^application/rtf$",
         r"^application/ogg$",
         r"^application/csv$",
+        r"^application/wmv$",        
+        r"^application/xlsx$",                
         r"^application/docx$",        
         r"^application/text$",        
         r"^application/json$",
@@ -540,7 +517,7 @@ def content_type_images(args):
         r"^application/epub\+zip$",
         r"^application/atom\+xml$",
         r"^application/x\-bibtex$",
-        r"^application/pkix\-crl$",        
+        r"^application/pkix\-crl$", 
         r"^application/x\-dosexec$",               
         r"^application/javascript$",
         r"^application/x\-mpegurl$",
@@ -550,6 +527,7 @@ def content_type_images(args):
         r"^application/x\-tar\-gz$",
         r"^application/pkix\-cert$",
         r"^application/x\-rss\+xml$",
+        r"^application/pkcs7\-mime$",                 
         r"^application/x\-xpinstall$",
         r"^application/java\-archive$",        
         r"^application/x\-javascript$",
@@ -580,6 +558,7 @@ def content_type_images(args):
         r"^application/vnd\.ms\-officetheme$",        
         r"^application/x\-pkcs7\-certificates$",
         r"^application/x\-research\-info\-systems$",
+        r"^application/vnd\.ms\-word\.document\.12$",                
         r"^application/vnd\.android\.package\-archive$",
         r"^application/vnd\.oasis\.opendocument\.text$",
         r"^application/vnd\.oasis\.opendocument\.spreadsheet$",
@@ -588,6 +567,7 @@ def content_type_images(args):
         r"^application/vnd\.openxmlformats\-officedocument\.spreadsheetml\.sheet$",
         r"^application/vnd\.openxmlformats\-officedocument\.wordprocessingml\.document$",
         r"^application/vnd\.openxmlformats\-officedocument\.presentationml\.presentation$",
+        r"^audio/wav$",        
         r"^audio/x\-rpm$",
         r"^audio/x\-wav$",
         r"^audio/x\-ms\-wma$",
@@ -628,6 +608,13 @@ def content_type_ignore(args):
     update_url(args[0], args[1], args[2])
     return True
 
+def sanitize_content_type(content_type):
+    content_type = content_type.strip()
+    content_type = content_type.rstrip()      
+    content_type = re.sub(r'^"(.*)"$', r"\1", content_type)
+    content_type = re.sub(r'^content-type: (.*)"$', r"\1", content_type)
+    content_type = re.sub(r'^content-type:(.*)"$', r"\1", content_type)    
+    return content_type
 
 def get_page(url):
     response = read_web(url)
@@ -742,7 +729,7 @@ for iteration in range(iterations):
         if not is_block_listed(target_url[1]) and is_allow_listed(target_url[1]):
             try:
                 get_page(target_url[0])
-                if processed_count >= dump_every:
+                if processed_count >= dump_every and in_memory_sqlite:
                     con.backup(source_con)
                     processed_count=0
                 else:
