@@ -18,6 +18,29 @@ ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
+content_type_image_regex = [
+        r"^image/\*$",
+        r"^image/gif$",
+        r"^image/png$",
+        r"^image/bmp$",
+        r"^image/jpg$",
+        r"^image/any$",
+        r"^image/apng$",
+        r"^image/jpeg$",
+        r"^image/tiff$",
+        r"^image/webp$",
+        r"^image/pjpeg$",
+        r"^image/dicomp$",        
+        r"^image/\{png\}$",        
+        r"^image/x\-icon$",
+        r"^image/svg\+xml$",
+        r"^image/x\-ms\-bmp$",        
+        r"^image/vnd\.wap\.wbmp$",
+        r"^image/vnd\.microsoft\.icon$",
+        r"^application/jpg$",        
+    ]
+
+
 def break_after(seconds=60):
     def timeout_handler(signum, frame):  # Custom signal handler
         raise TimeoutException
