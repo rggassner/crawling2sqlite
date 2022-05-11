@@ -12,6 +12,7 @@ Requirements:
 pip3 install pyOpenSSL
 pip3 install django
 pip3 install bs4
+apt install libwebp-dev
 
 ## viewing images
 
