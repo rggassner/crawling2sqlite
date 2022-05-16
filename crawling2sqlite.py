@@ -18,6 +18,9 @@ in_memory_sqlite = False
 #Database will be dumped to file every nth visited urls
 dump_every = 1000
 
+#bre_greedy = True - Save urls to database that might not work, since have not matched any regex.
+be_greedy=False
+
 # block_list do not crawl these domains. Some urls might be inserted, added from allow lists, but they are never crawled.
 url_regex_block_list = [
     "wikipedia\.org$",
@@ -49,7 +52,10 @@ soup_tag_blocklist = [
 
 def create_database(initial_url):
     print("Creating database.")
-    host = urlsplit(initial_url)[1]
+    try:
+        host = urlsplit(initial_url)[1]
+    except ValueError as e:
+        return false
     con = sqlite3.connect("crawler.db")
     cur = con.cursor()
     cur.execute(
@@ -81,7 +87,10 @@ def is_allow_listed(url):
 
 
 def insert_if_new_url(url, visited, source, content_type="", words=""):
-    host = urlsplit(url)[1]
+    try:
+        host = urlsplit(url)[1]
+    except ValueError as e:
+        return False
     cur = con.cursor()
     cur.execute(
         "insert or ignore into urls (url,visited,content_type,source,words,host) values (?,?,?,?,?,?)",
@@ -98,12 +107,18 @@ def insert_email(url, email):
     return True
 
 
-def update_url(url, visited, content_type, words="",source='href'):
+def update_url(url, content_type,visited="", words="",source='href'):
     cur = con.cursor()
-    cur.execute(
-        "update urls set (visited,content_type,words,source) = (?,?,?,?) where url = ?",
-        (visited, content_type, words, source, url),
-    )
+    if visited != "":
+        cur.execute(
+            "update urls set (visited,content_type,words,source) = (?,?,?,?) where url = ?",
+            (visited, content_type, words, source, url),
+        )
+    else:
+        cur.execute(
+            "update urls set (content_type,words,source) = (?,?,?) where url = ?",
+            (content_type, words, source, url),
+        )    
     con.commit()
 
 
@@ -112,7 +127,7 @@ def get_random_unvisited_domains():
         try:
             cur = con.cursor()
             random_url = cur.execute(
-                "SELECT url, host FROM (select url,host from urls where visited =0 order by random() ) as z GROUP BY z.host order by random() "
+                "SELECT url, host FROM (select url,host from urls where visited = 0 order by random() ) as z GROUP BY z.host order by random() "
             ).fetchall()
             break
         except sqlite3.OperationalError:
@@ -257,6 +272,7 @@ def unsafe_character_url(args):
         r"^xmpp:",
         r"^void:",
         r"^waze:",        
+        r"^itms:",         
         r"^viber:",
         r"^steam:",
         r"^ircs*:",
@@ -301,8 +317,8 @@ def unsafe_character_url(args):
         r"^digitalassistant:",
         r"^chrome\-extension:",
         r"^ms\-windows\-store:",
-        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:|tek:|sip:|to:|SAC:|facetime-audio:|telefone:|telegram:|tel\+:|tal:)",
-        r"^(javascript:|javacscript:|javacript:|javascripy:|javscript:|javascript\.|javascirpt:|javascript;|javascriot:|javascritp:|havascript:|javescript:|javascrip:|javascrpit:|js:|javascripr:|javastript:|javascipt:|javsacript:|javasript:|javascrit:|javascriptt:|ja vascript:|javascrtipt:|jasvascript:)",
+        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:|tek:|sip:|to:|SAC:|facetime-audio:|telefone:|telegram:|tel\+:|tal:|tele:|tels:)",
+        r"^(javascript:|javacscript:|javacript:|javascripy:|javscript:|javascript\.|javascirpt:|javascript;|javascriot:|javascritp:|havascript:|javescript:|javascrip:|javascrpit:|js:|javascripr:|javastript:|javascipt:|javsacript:|javasript:|javascrit:|javascriptt:|ja vascript:|javascrtipt:|jasvascript:|javascropt:|jvascript:|javasctipt:|avascript:)",
     ]
 )
 def do_nothing_url(args):
@@ -319,12 +335,12 @@ def full_url(args):
 
 @function_for_url(
     [
-        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:|Email para:|email :|email:)"
+        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:|Email para:|email :|email:|E-mail: |mail-to:)"
     ]
 )
 def email_url(args):
     address_search = re.search(
-        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:|Email para:|email :|email:)(.*)",
+        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:|Email para:|email :|email:|E-mail: |mail-to:)(.*)",
         args[0],
         flags=re.I | re.U,
     )
@@ -358,7 +374,11 @@ def get_links(soup, content_url):
                 function([url, content_url])
                 continue
         if not found:
+            out_url = urljoin(content_url, url)
             print("Unexpected URL -{}- Reference URL -{}-".format(url, content_url))
+            print("Unexpected URL. Would this work? -{}-".format(out_url))   
+            if be_greedy:
+                insert_if_new_url(out_url, 0, "href")                        
     return True
 
 ###############################################################################
@@ -375,7 +395,7 @@ def function_for_img(regexp_list):
 @function_for_img(
     [
      r"^(\/|\.\.\/|\.\/)",
-     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬íÇâã]+$",
+     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬íÇâã€]+$",
      r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´]*[\?\/][0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬:\"¶´]+$",        
     ]
 )
@@ -431,7 +451,11 @@ def get_images(soup, content_url):
                 function([url, content_url])
                 continue
         if not found:
+            out_url = urljoin(content_url,url)
             print("Unexpected Image -{}- Reference URL -{}-".format(url, content_url))
+            print("Unexpected Image. Would this work? -{}-".format(out_url))
+            if be_greedy:
+                insert_if_new_url(out_url, 0, "img")
     return True
 
 
@@ -452,25 +476,23 @@ def content_type_download(args):
     get_links(soup, args[0])
     get_images(soup, args[0])
     words = get_words(soup, args[0])
-    update_url(args[0], args[1], args[2], words=words)
+    update_url(args[0], args[2],visited=args[1], words=words)
     return True
 
 
 @function_for_content_type(content_type_image_regex)
 def content_type_images(args):
     # Since we have an external downloader, update as not visited, and mark as a img source
-    update_url(args[0], 0, args[2], source='img')
+    ##do not pass visited
+    update_url(args[0], args[2], source='img')
     return True
 
 
 @function_for_content_type(
     [
         r"^\*/\*$",
-        r"^audio/ogg$",
-        r"^audio/mp3$",                
-        r"^audio/mp4$",        
-        r"^audio/mpeg$",
-        r"^audio/opus$",
+        r"^adobe/pdf$",        
+        r"^application/\*$",        
         r"^application/pdf$",
         r"^application/xml$",
         r"^application/rar$",
@@ -510,6 +532,7 @@ def content_type_images(args):
         r"^application/download$",
         r"^application/xml\-dtd$",
         r"^application/rss\+xml$", 
+        r"^application/ms\-excel$",        
         r"^application/hal\+json$",        
         r"^application/ttml\+xml$",
         r"^application/x\-msword$",
@@ -547,7 +570,8 @@ def content_type_images(args):
         r"^application/x\-zip\-compressed$",
         r"^application/x\-rar\-compressed$",
         r"^application/x\-debian\-package$", 
-        r"^application/pdfcontent\-length:",                
+        r"^application/pdfcontent\-length:",
+        r"^application/x\-httpd\-ea\-php71$",        
         r"^application/vnd\.apple\.mpegurl$",
         r"^application/vnd\.ms\-powerpoint$",
         r"^application/x\-gtar\-compressed$",
@@ -559,23 +583,36 @@ def content_type_images(args):
         r"^application/x\-pkcs7\-certificates$",
         r"^application/x\-research\-info\-systems$",
         r"^application/vnd\.ms\-word\.document\.12$",                
+        r"^application/vnd\.google\-earth\.kml\+xml$",        
         r"^application/vnd\.android\.package\-archive$",
         r"^application/vnd\.oasis\.opendocument\.text$",
+        r"^application/x\-zip\-compressedcontent\-length:",  
         r"^application/vnd\.oasis\.opendocument\.spreadsheet$",
         r"^application/vnd\.spring\-boot\.actuator\.v3\+json$",                
         r"^application/vnd\.oasis\.opendocument\.presentation$",
+        r"^application/vnd\.ms\-excel\.sheet\.macroenabled\.12$",  
         r"^application/vnd\.openxmlformats\-officedocument\.spreadsheetml\.sheet$",
+        r"^application/vnd\.openxmlformats\-officedocument\.presentationml\.slideshow",                  
         r"^application/vnd\.openxmlformats\-officedocument\.wordprocessingml\.document$",
+        r"^application/vnd\.openxmlformats\-officedocument\.wordprocessingml\.template$",                
         r"^application/vnd\.openxmlformats\-officedocument\.presentationml\.presentation$",
+        r"^audio/ogg$",
+        r"^audio/mp3$",                
+        r"^audio/mp4$",        
         r"^audio/wav$",        
+        r"^audio/mpeg$",
+        r"^audio/opus$", 
         r"^audio/x\-rpm$",
         r"^audio/x\-wav$",
+        r"^audio/unknown$",        
+        r"^audio/x\-scpls$",                 
         r"^audio/x\-ms\-wma$",
         r"^binary/octet\-stream$",
         r"^model/usd$",
         r"^multipart/x\-zip$",        
         r"^multipart/form\-data$",
         r"^multipart/x\-mixed\-replace$",
+        r"^octet/stream$",        
         r"^text/xml$",
         r"^text/css$",
         r"^text/csv$",
@@ -586,16 +623,19 @@ def content_type_images(args):
         r"^text/turtle$",
         r"^text/x\-tex$",
         r"^text/x\-chdr$",
+        r"^text/x\-vcard$",                
         r"^text/calendar$",
         r"^text/directory$",
         r"^text/x\-bibtex$",
         r"^text/javascript$",
+        r"^text/x\-vcalendar$",        
         r"^text/x\-comma\-separated\-values$",
         r"^text/html, charset=iso\-8859\-1$",        
         r"^video/mp4$",
         r"^video/ogg$",
+        r"^video/f4v$", 
         r"^video/webm$",
-        r"^video/x\-flv$",        
+        r"^video/x\-flv$", 
         r"^video/quicktime$",        
         r"^video/x\-ms\-wmv$",
         r"^video/x\-ms\-asf$",
@@ -605,7 +645,7 @@ def content_type_images(args):
 )
 def content_type_ignore(args):
     # We update as visited.
-    update_url(args[0], args[1], args[2])
+    update_url(args[0], args[2], visited=args[1])
     return True
 
 def sanitize_content_type(content_type):
@@ -613,7 +653,7 @@ def sanitize_content_type(content_type):
     content_type = content_type.rstrip()      
     content_type = re.sub(r'^"(.*)"$', r"\1", content_type)
     content_type = re.sub(r'^content-type: (.*)"$', r"\1", content_type)
-    content_type = re.sub(r'^content-type:(.*)"$', r"\1", content_type)    
+    content_type = re.sub(r'^content-type:(.*)"$', r"\1", content_type)  
     return content_type
 
 def get_page(url):
@@ -621,6 +661,7 @@ def get_page(url):
     if response:
         content = response[0]
         content_type = response[1]
+        content_type=sanitize_content_type(content_type)
         found = False
         for regex, function in content_type_functions:
             m = regex.search(content_type)
@@ -632,7 +673,7 @@ def get_page(url):
             print("UNKNOWN type -{}- -{}-".format(url, content_type))
     else:
         # Page request didn't work
-        update_url(url, 2, "", "")
+        update_url(url, "", visited=2)
 
 
 # ----------------------------------------------------------------------
