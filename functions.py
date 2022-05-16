@@ -19,6 +19,7 @@ ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
 content_type_image_regex = [
+        r"^img/jpeg$",    
         r"^image/\*$",
         r"^image/gif$",
         r"^image/png$",
@@ -30,11 +31,13 @@ content_type_image_regex = [
         r"^image/tiff$",
         r"^image/webp$",
         r"^image/pjpeg$",
-        r"^image/dicomp$",        
+        r"^image/dicomp$", 
         r"^image/\{png\}$",        
         r"^image/x\-icon$",
         r"^image/svg\+xml$",
         r"^image/x\-ms\-bmp$",        
+        r"^image/x-photoshop$",         
+        r"^image/x\-coreldraw$",        
         r"^image/vnd\.wap\.wbmp$",
         r"^image/vnd\.microsoft\.icon$",
         r"^application/jpg$",        
