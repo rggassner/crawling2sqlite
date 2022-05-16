@@ -10,12 +10,25 @@ The expressions have been tested against more than 10 million urls, but there ar
 Requirements:
 
 pip3 install pyOpenSSL
+
 pip3 install django
+
 pip3 install bs4
+
 apt install libwebp-dev
 
-## viewing images
+## Viewing images
 
-I recomend using feh to see the results in the image directory
+I recommend using feh to see the results in the image directory
 
 feh -FZzD 1
+
+## Some interesting queries
+
+I´ve found and reported several directory traversal vulnerabilities using these queries, some were even remediated :smile:
+
+- select * from urls where url like '%file=%/%' order by url;
+- select * from urls where url like '%file=%' order by url;
+- select * from urls where url like '%arquivo=%/%' order by url;
+- select * from urls where url like '%arquivo=%' order by url;
+
