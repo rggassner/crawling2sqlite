@@ -80,7 +80,10 @@ def is_image(content_type):
     
 for image in get_unvisited_img():
     resolution=0
-    save_result=save_image(image)
+    try:
+        save_result=save_image(image)
+    except OSError:
+        continue
     if save_result:
         content_type,resolution=save_result
         if is_image(content_type):
