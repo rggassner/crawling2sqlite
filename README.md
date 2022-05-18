@@ -32,6 +32,6 @@ I´ve found and reported several directory traversal vulnerabilities using these
 - select * from urls where url like '%arquivo=%/%' order by url;
 - select * from urls where url like '%arquivo=%' order by url;
 
-Contend enumeration:
+Content enumeration:
 - select * from urls where url like '%whatsapp-image-%' order by url;
 
