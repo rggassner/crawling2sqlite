@@ -162,7 +162,8 @@ def sanitize_url(url):
     url = re.sub("^[a-zA-Z\.“\(´]https://", "https://", url)  
     url = re.sub("^[a-zA-Z\.“\(´]http://", "http://", url)  
     url = re.sub("^https[a-zA-Z\.“\(´]://", "https://", url)  
-    url = re.sub("^http[\.“\(´]://", "http://", url)  
+    url = re.sub("^http[\.“\(´]://", "http://", url) 
+    url = re.sub("^htto://", "http://", url)  
     url = re.sub("^https: / /", "https://", url)  
     url = re.sub("^://", "https://", url)      
     url = re.sub("^htt://", "http://", url)    
@@ -193,6 +194,7 @@ def sanitize_url(url):
     url = re.sub("^ttp://", "http://", url)
     url = re.sub("^https%3A//", "https://", url)
     url = re.sub("^%20https://", "https://", url)
+    url = re.sub("^%20http://", "http://", url)
     url = re.sub("^%22mailto:", "mailto:", url)
     url = re.sub("^httpqs://", "https://www.", url)
     return url
@@ -222,7 +224,7 @@ def function_for_url(regexp_list):
     [
         r"^(\/|\.\.\/|\.\/)",
         r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´ç�í¦ã]+$",
-        r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´ç]*[\?\/][0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬:\"¶ç´]+$",
+        r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´ç]*[\?\/][0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬:\"¶ç´™*]+$",
     ]
 )
 def relative_url(args):
@@ -314,11 +316,11 @@ def unsafe_character_url(args):
         r"^moz\-extension:",
         r"^microsoft\-edge:",
         r"^x\-help\-action:",
-        r"^digitalassistant:",
+        r"^digitalassistant:",     
         r"^chrome\-extension:",
         r"^ms\-windows\-store:",
-        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:|tek:|sip:|to:|SAC:|facetime-audio:|telefone:|telegram:|tel\+:|tal:|tele:|tels:)",
-        r"^(javascript:|javacscript:|javacript:|javascripy:|javscript:|javascript\.|javascirpt:|javascript;|javascriot:|javascritp:|havascript:|javescript:|javascrip:|javascrpit:|js:|javascripr:|javastript:|javascipt:|javsacript:|javasript:|javascrit:|javascriptt:|ja vascript:|javascrtipt:|jasvascript:|javascropt:|jvascript:|javasctipt:|avascript:)",
+        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:|tek:|sip:|to:|SAC:|facetime-audio:|telefone:|telegram:|tel\+:|tal:|tele:|tels:|cal:|tel\.:)",
+        r"^(javascript:|javacscript:|javacript:|javascripy:|javscript:|javascript\.|javascirpt:|javascript;|javascriot:|javascritp:|havascript:|javescript:|javascrip:|javascrpit:|js:|javascripr:|javastript:|javascipt:|javsacript:|javasript:|javascrit:|javascriptt:|ja vascript:|javascrtipt:|jasvascript:|javascropt:|jvascript:|javasctipt:|avascript:|javacsript:)",
     ]
 )
 def do_nothing_url(args):
@@ -335,12 +337,12 @@ def full_url(args):
 
 @function_for_url(
     [
-        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:|Email para:|email :|email:|E-mail: |mail-to:)"
+        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:|Email para:|email :|email:|E-mail: |mail-to:|maitlo:|mail.to:)"
     ]
 )
 def email_url(args):
     address_search = re.search(
-        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:|Email para:|email :|email:|E-mail: |mail-to:)(.*)",
+        r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:|Email para:|email :|email:|E-mail: |mail-to:|maitlo:|mail.to:)(.*)",
         args[0],
         flags=re.I | re.U,
     )
@@ -395,8 +397,8 @@ def function_for_img(regexp_list):
 @function_for_img(
     [
      r"^(\/|\.\.\/|\.\/)",
-     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬íÇâã€]+$",
-     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´]*[\?\/][0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬:\"¶´]+$",        
+     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬íÇâã€®]+$",
+     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´à]*[\?\/][0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬:\"¶´]+$",        
     ]
 )
 def relative_img(args):
@@ -421,6 +423,8 @@ def unsafe_character_img(args):
         r"^data:",
         r"^about:",
         r"^file:",
+        r"^blob:",
+        r"^chrome\-extension:",                
     ]
 )
 def do_nothing_img(args):
@@ -472,7 +476,10 @@ def function_for_content_type(regexp_list):
 
 @function_for_content_type([r"^text/html$"])
 def content_type_download(args):
-    soup = BeautifulSoup(args[3], "html.parser")
+    try:
+        soup = BeautifulSoup(args[3], "html.parser")
+    except UnboundLocalError as e:
+        return False
     get_links(soup, args[0])
     get_images(soup, args[0])
     words = get_words(soup, args[0])
@@ -502,8 +509,10 @@ def content_type_images(args):
         r"^application/xls$",        
         r"^application/rtf$",
         r"^application/ogg$",
+        r"^application/mp3$",        
         r"^application/csv$",
-        r"^application/wmv$",        
+        r"^application/wmv$",    
+        r"^application/epub$",                        
         r"^application/xlsx$",                
         r"^application/docx$",        
         r"^application/text$",        
@@ -511,7 +520,8 @@ def content_type_images(args):
         r"^application/mobi$",
         r"^application/gzip$",
         r"^application/save$",
-        r"^application/null$",        
+        r"^application/null$",
+        r"^application/zlib$",        
         r"^application/\.zip$",
         r"^application/\.rar$",
         r"^application/\.pdf$",
@@ -524,6 +534,7 @@ def content_type_images(args):
         r"^application/msword$",
         r"^application/x\-zip$",
         r"^application/msword$",
+        r"^application/x\-xar$",                
         r"^application/unknown$",
         r"^application/x\-gzip$",
         r"^application/msexcel$",
@@ -550,15 +561,16 @@ def content_type_images(args):
         r"^application/x\-tar\-gz$",
         r"^application/pkix\-cert$",
         r"^application/x\-rss\+xml$",
-        r"^application/pkcs7\-mime$",                 
+        r"^application/pkcs7\-mime$",                         
         r"^application/x\-xpinstall$",
+        r"^application/x\-troff\-man$",                
         r"^application/java\-archive$",        
         r"^application/x\-javascript$",
         r"^application/x\-msdownload$",
         r"^application/x\-httpd\-php$",
         r"^application/octet\-stream$",
         r"^application/vnd\.ms\-word$",
-        r"^application/x\-executable$",                
+        r"^application/x\-executable$", 
         r"^application/pgp\-signature$",
         r"^application/vnd\.ms\-excel$",
         r"^application/force\-download$",
@@ -571,6 +583,8 @@ def content_type_images(args):
         r"^application/x\-rar\-compressed$",
         r"^application/x\-debian\-package$", 
         r"^application/pdfcontent\-length:",
+        r"^application/privatetempstorage$",        
+        r"^application/x\-httpd\-ea\-php54$",                
         r"^application/x\-httpd\-ea\-php71$",        
         r"^application/vnd\.apple\.mpegurl$",
         r"^application/vnd\.ms\-powerpoint$",
@@ -580,17 +594,21 @@ def content_type_images(args):
         r"^application/x\-java\-jnlp\-file$", 
         r"^application/x\-mobipocket\-ebook$",
         r"^application/vnd\.ms\-officetheme$",        
+        r"^application/x\-ms\-dos\-executable$",                
         r"^application/x\-pkcs7\-certificates$",
         r"^application/x\-research\-info\-systems$",
         r"^application/vnd\.ms\-word\.document\.12$",                
         r"^application/vnd\.google\-earth\.kml\+xml$",        
+        r"^application/vnd\.ms\-excel\.openxmlformat$",                 
         r"^application/vnd\.android\.package\-archive$",
-        r"^application/vnd\.oasis\.opendocument\.text$",
+        r"^application/vnd\.oasis\.opendocument\.text$",        
         r"^application/x\-zip\-compressedcontent\-length:",  
         r"^application/vnd\.oasis\.opendocument\.spreadsheet$",
         r"^application/vnd\.spring\-boot\.actuator\.v3\+json$",                
         r"^application/vnd\.oasis\.opendocument\.presentation$",
         r"^application/vnd\.ms\-excel\.sheet\.macroenabled\.12$",  
+        r"^application/vnd\.openxmlformats\-officedocument\.spre$",                
+        r"^application/vnd\.adobe\.air\-application\-installer\-package\+zip$",                
         r"^application/vnd\.openxmlformats\-officedocument\.spreadsheetml\.sheet$",
         r"^application/vnd\.openxmlformats\-officedocument\.presentationml\.slideshow",                  
         r"^application/vnd\.openxmlformats\-officedocument\.wordprocessingml\.document$",
@@ -604,9 +622,11 @@ def content_type_images(args):
         r"^audio/opus$", 
         r"^audio/x\-rpm$",
         r"^audio/x\-wav$",
-        r"^audio/unknown$",        
+        r"^audio/unknown$", 
         r"^audio/x\-scpls$",                 
         r"^audio/x\-ms\-wma$",
+        r"^audio/x\-mpegurl$",         
+        r"^audio/x\-pn\-realaudio$",         
         r"^binary/octet\-stream$",
         r"^model/usd$",
         r"^multipart/x\-zip$",        
