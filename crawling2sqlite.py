@@ -18,11 +18,11 @@ in_memory_sqlite = False
 #Database will be dumped to file every nth visited urls
 dump_every = 1000
 
-#bre_greedy = True - Save urls to database that might not work, since have not matched any regex.
+#be_greedy = True - Save urls to database that might not work, since have not matched any regex.
 be_greedy=False
 
-# block_list do not crawl these domains. Some urls might be inserted, added from allow lists, but they are never crawled.
-url_regex_block_list = [
+# host_regex_block_list do not crawl these domains. Some urls might be inserted, added from allow lists, but they are never crawled.
+host_regex_block_list = [
     "wikipedia\.org$",
     "wikimedia\.org$",
     "twitter\.com$",
@@ -32,8 +32,17 @@ url_regex_block_list = [
     "reddit\.com$",
     "instagram\.com$",
 ]
-url_regex_allow_list = [r"\.br$"]
-# url_regex_allow_list = [r".*"]
+
+#do not crawl urls that match any of these regexes
+url_regex_block_list = [
+    "/noticias/modules/noticias/modules/noticias/modules/",
+    "/images/images/images/images/",    
+    "/image/image/image/image/",        
+]
+
+
+host_regex_allow_list = [r"\.br$"]
+# host_regex_allow_list = [r".*"]
 url_functions = []
 img_functions = []
 content_type_functions = []
@@ -70,17 +79,24 @@ def create_database(initial_url):
     con.close()
 
 
-# Verify if url is in a blocklist.
-def is_block_listed(url):
-    for regex in url_regex_block_list:
+# Verify if host is in a blocklist.
+def is_host_block_listed(url):
+    for regex in host_regex_block_list:
         if re.search(regex, url, flags=re.I | re.U):
             return True
     return False
 
+# Verify if url is in a blocklist.
+def is_url_block_listed(url):
+    for regex in url_regex_block_list:
+        if re.search(regex, url, flags=re.I | re.U):
+            print('####### URL is block listed {}'.format(url))
+            return True
+    return False
 
 # Verify if url is in a allowlist.
-def is_allow_listed(url):
-    for regex in url_regex_allow_list:
+def is_host_allow_listed(url):
+    for regex in host_regex_allow_list:
         if re.search(regex, url, flags=re.I | re.U):
             return True
     return False
@@ -787,7 +803,7 @@ processed_count=0
 for iteration in range(iterations):
     random_urls = get_random_unvisited_domains()
     for target_url in random_urls:
-        if not is_block_listed(target_url[1]) and is_allow_listed(target_url[1]):
+        if not is_host_block_listed(target_url[1]) and is_host_allow_listed(target_url[1]) and not is_url_block_listed(target_url[0]):
             try:
                 get_page(target_url[0])
                 if processed_count >= dump_every and in_memory_sqlite:
