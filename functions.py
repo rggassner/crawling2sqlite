@@ -19,6 +19,7 @@ ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
 content_type_image_regex = [
+        r"^image/$",        
         r"^img/jpeg$",    
         r"^image/\*$",
         r"^image/gif$",
