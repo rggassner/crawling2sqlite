@@ -40,6 +40,8 @@ I´ve found and reported several directory traversal vulnerabilities using these
 - select * from urls where url like '%.tar.xz%' order by url;
 - select * from urls where url like '%.tar.bz%' order by url;
 - select * from urls where url like '%.zip%' order by url;
+- select * from urls where url like '%upload%' order by url;
+- select * from urls where url like '%register%' order by url;
 
 Content enumeration:
 - select * from urls where url like '%whatsapp-image-%' order by url;
