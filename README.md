@@ -31,6 +31,15 @@ I´ve found and reported several directory traversal vulnerabilities using these
 - select * from urls where url like '%file=%' order by url;
 - select * from urls where url like '%arquivo=%/%' order by url;
 - select * from urls where url like '%arquivo=%' order by url;
+- select * from urls where url like '%?%=%' order by url;
+- select * from urls where url like '%==%' order by url;
+- select * from urls where url like '%.sql%' order by url;
+- select * from urls where url like '%bkp%' order by url;
+- select * from urls where url like '%backup%' order by url;
+- select * from urls where url like '%.tar.gz%' order by url;
+- select * from urls where url like '%.tar.xz%' order by url;
+- select * from urls where url like '%.tar.bz%' order by url;
+- select * from urls where url like '%.zip%' order by url;
 
 Content enumeration:
 - select * from urls where url like '%whatsapp-image-%' order by url;
