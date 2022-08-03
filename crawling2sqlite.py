@@ -143,7 +143,7 @@ def get_random_unvisited_domains():
         try:
             cur = con.cursor()
             random_url = cur.execute(
-                "SELECT url, host FROM (select url,host from urls where visited = 0 order by random() ) as z GROUP BY z.host order by random() "
+                "SELECT url,host FROM urls WHERE rowid > ( ABS(RANDOM()) % (SELECT max(rowid) FROM urls)) and visited=0 LIMIT 1"
             ).fetchall()
             break
         except sqlite3.OperationalError:
@@ -815,8 +815,8 @@ for iteration in range(iterations):
                 pass
     if in_memory_sqlite:
         con.backup(source_con)
-    print("End of iteration {}".format(iteration))
-    stats()
+    #print("End of iteration {}".format(iteration))
+    #stats()
 
 if in_memory_sqlite:
     source_con.close()
