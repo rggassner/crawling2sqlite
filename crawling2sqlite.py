@@ -217,7 +217,7 @@ def sanitize_url(url):
 
 def get_words(soup, content_url):
     output = ""
-    text = soup.find_all(text=True)
+    text = soup.find_all(string=True)
     for t in text:
         if t.parent.name not in soup_tag_blocklist:
             output += "{} ".format(t)
