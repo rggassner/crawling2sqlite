@@ -377,6 +377,11 @@ def email_url(args):
 
 
 def get_links(soup, content_url):
+    #If you want to grep some patterns, use the code below.
+    #pattern=r'"file":{".*?":"(.*?)"}'
+    #for script in soup.find_all('script',type="text/javascript"):
+    #    if re.search(pattern,str(script)):
+    #        print(re.search(pattern,str(script))[1])
     tags = soup("a")
     for tag in tags:
         url = tag.get("href", None)
