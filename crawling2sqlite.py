@@ -10,14 +10,6 @@ initial_url = "https://www.uol.com.br"
 #Every iteration one random url for every unique domain in the database is crawled.
 iterations = 100
 
-#The use of in memory sqlite increases performance but is resource intensive
-#and makes impossible to run multiple simultaneous processes, since databases
-#would be out of sync.
-in_memory_sqlite = False
-
-#Database will be dumped to file every nth visited urls
-dump_every = 1000
-
 #be_greedy = True - Save urls to database that might not work, since have not matched any regex.
 be_greedy=False
 
@@ -797,32 +789,16 @@ def stats():
         )
     )
 
-if in_memory_sqlite:    
-    source_con = sqlite3.connect("crawler.db", timeout=60)
-    con = sqlite3.connect(':memory:',timeout=60)
-    source_con.backup(con)
-else:
-    con = sqlite3.connect("crawler.db", timeout=60)
+con = sqlite3.connect("crawler.db", timeout=60)
 
-processed_count=0
 for iteration in range(iterations):
     random_urls = get_random_unvisited_domains()
     for target_url in random_urls:
         if not is_host_block_listed(target_url[1]) and is_host_allow_listed(target_url[1]) and not is_url_block_listed(target_url[0]):
             try:
                 get_page(target_url[0])
-                if processed_count >= dump_every and in_memory_sqlite:
-                    con.backup(source_con)
-                    processed_count=0
-                else:
-                    processed_count=processed_count+1
             except UnicodeEncodeError:
                 pass
-    if in_memory_sqlite:
-        con.backup(source_con)
     #print("End of iteration {}".format(iteration))
     #stats()
-
-if in_memory_sqlite:
-    source_con.close()
 con.close()
