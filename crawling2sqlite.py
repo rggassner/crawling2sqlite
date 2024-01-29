@@ -93,12 +93,17 @@ def is_host_allow_listed(url):
             return True
     return False
 
+def remove_jsessionid_with_semicolon(url):
+    pattern = r';jsessionid=[^&?]*'
+    cleaned_url = re.sub(pattern, '', url)
+    return cleaned_url
 
 def insert_if_new_url(url, visited, source, content_type="", words=""):
     try:
         host = urlsplit(url)[1]
     except ValueError as e:
         return False
+    url=remove_jsessionid_with_semicolon(url)
     cur = con.cursor()
     cur.execute(
         "insert or ignore into urls (url,visited,content_type,source,words,host) values (?,?,?,?,?,?)",
