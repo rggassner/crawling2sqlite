@@ -512,6 +512,16 @@ def content_type_images(args):
     update_url(args[0], args[2], source='img')
     return True
 
+@function_for_content_type([r"^audio/midi$"])
+def content_type_midis(args):
+    #download midi
+    args[3]
+    filename=os.path.basename(urlparse(args[0]).path)
+    f = open('midis/'+filename, "wb")
+    f.write(args[3])
+    f.close()
+    update_url(args[0], args[2], visited=args[1])
+    return True
 
 @function_for_content_type(
     [
