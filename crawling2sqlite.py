@@ -134,19 +134,34 @@ def update_url(url, content_type,visited="", words="",source='href'):
         )    
     con.commit()
 
+#Fast and uses low memory, but hosts
+#with inumerous urls will have higher chances to be
+#selected, biasing the result.
+#def get_random_unvisited_domains():
+#    for i in range(3):
+#        try:
+#            cur = con.cursor()
+#            random_url = cur.execute(
+#                "SELECT url,host FROM urls WHERE rowid > ( ABS(RANDOM()) % (SELECT max(rowid) FROM urls)) and visited=0 LIMIT 1"
+#            ).fetchall()
+#            break
+#        except sqlite3.OperationalError:
+#            create_database(initial_url)
+#    return random_url
 
+#Uses more resources, but will spread the connections 
+#evenly through the hosts. Expect the number of hosts to increase rapidly
 def get_random_unvisited_domains():
     for i in range(3):
         try:
             cur = con.cursor()
             random_url = cur.execute(
-                "SELECT url,host FROM urls WHERE rowid > ( ABS(RANDOM()) % (SELECT max(rowid) FROM urls)) and visited=0 LIMIT 1"
+                "select url,host from (SELECT url,host FROM urls where visited=0 order by RANDOM()) group by host"
             ).fetchall()
             break
         except sqlite3.OperationalError:
             create_database(initial_url)
     return random_url
-
 
 def sanitize_url(url):
     url = url.strip()
