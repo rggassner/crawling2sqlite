@@ -156,7 +156,7 @@ def get_random_unvisited_domains():
         try:
             cur = con.cursor()
             random_url = cur.execute(
-                "select url,host from (SELECT url,host FROM urls where visited=0 order by RANDOM()) group by host"
+                "select url,host from (SELECT url,host FROM urls where visited=0 order by RANDOM()) group by host order by RANDOM()"
             ).fetchall()
             break
         except sqlite3.OperationalError:
