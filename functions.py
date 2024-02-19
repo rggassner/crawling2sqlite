@@ -9,11 +9,15 @@ from io import BytesIO
 from socket import timeout
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from django.utils.encoding import force_str
+from random_user_agent.user_agent import UserAgent
+from random_user_agent.params import SoftwareName, OperatingSystem
 
 MAX_DOWNLOAD_TIME = 600
-user_agent = (
-    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:98.0) Gecko/20100101 Firefox/98.0"
-)
+software_names = [SoftwareName.CHROME.value]
+operating_systems = [OperatingSystem.WINDOWS.value, OperatingSystem.LINUX.value]
+
+user_agent_rotator = UserAgent(software_names=software_names, operating_systems=operating_systems, limit=100)
+
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
@@ -82,7 +86,7 @@ def break_after(seconds=60):
 def read_web(url):
     try:
         req = urllib.request.Request(smart_urlquote(url))
-        req.add_header("User-Agent", user_agent)
+        req.add_header("User-Agent", user_agent_rotator.get_random_user_agent())
         response = urllib.request.urlopen(req, context=ctx, timeout=30)
         content = response.read()
         content_type = response.info().get_content_type()
