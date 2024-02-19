@@ -586,6 +586,7 @@ def content_type_midis(args):
         r"^application/download$",
         r"^application/xml\-dtd$",
         r"^application/rss\+xml$", 
+        r"^application/x\-bzip2$",
         r"^application/ms\-excel$",        
         r"^application/hal\+json$",        
         r"^application/ttml\+xml$",
