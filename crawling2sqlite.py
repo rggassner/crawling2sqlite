@@ -1,27 +1,30 @@
 #!/usr/bin/python3
-import re
+import re,os
 import sqlite3
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit,urlparse, unquote
 from bs4 import BeautifulSoup
 from functions import read_web, content_type_image_regex
+from pathlib import PurePosixPath
+
+EXTRACT_WORDS=False
+HUNT_OPEN_DIRECTORIES=True
+
+DOWNLOAD_MIDIS=False
+MIDIS_FOLDER='midis'
+
+DOWNLOAD_PDFS=False
+PDFS_FOLDER='pdfs'
 
 initial_url = "https://www.uol.com.br"
 
 #Every iteration one random url for every unique domain in the database is crawled.
-iterations = 100
+iterations = 1000
 
 #be_greedy = True - Save urls to database that might not work, since have not matched any regex.
 be_greedy=False
 
 # host_regex_block_list do not crawl these domains. Some urls might be inserted, added from allow lists, but they are never crawled.
 host_regex_block_list = [
-    "wikipedia\.org$",
-    "wikimedia\.org$",
-    "twitter\.com$",
-    "facebook\.com$",
-    "tumblr\.com$",
-    "pinterest\.com$",
-    "reddit\.com$",
     "instagram\.com$",
 ]
 
@@ -32,9 +35,7 @@ url_regex_block_list = [
     "/image/image/image/image/",        
 ]
 
-
-host_regex_allow_list = [r"\.br$"]
-# host_regex_allow_list = [r".*"]
+host_regex_allow_list = [r".*"]
 url_functions = []
 img_functions = []
 content_type_functions = []
@@ -60,11 +61,11 @@ def create_database(initial_url):
     con = sqlite3.connect("crawler.db")
     cur = con.cursor()
     cur.execute(
-        """CREATE TABLE urls (url text, visited boolean, content_type text, source text, words text, host text, resolution integer, UNIQUE (url))"""
+        """CREATE TABLE urls (url text, visited boolean, isopendir boolean, content_type text, source text, words text, host text, resolution integer, UNIQUE (url))"""
     )
     cur.execute("""CREATE TABLE emails (url text, email text, UNIQUE (url,email))""")
     cur.execute(
-        "INSERT INTO urls (url,visited,content_type,source,words,host) VALUES (?,0,'','href','',?)",
+        "INSERT INTO urls (url,visited,isopendir,content_type,source,words,host) VALUES (?,0,0,'','href','',?)",
         (initial_url, host),
     )
     con.commit()
@@ -119,6 +120,13 @@ def insert_email(url, email):
     con.commit()
     return True
 
+def update_url_isopendir(url):
+    cur = con.cursor()
+    cur.execute(
+        "update urls set (isopendir) = (?) where url = ?",
+        ('1', url),
+    )
+    con.commit()
 
 def update_url(url, content_type,visited="", words="",source='href'):
     cur = con.cursor()
@@ -156,12 +164,13 @@ def get_random_unvisited_domains():
         try:
             cur = con.cursor()
             random_url = cur.execute(
-                "select url,host from (SELECT url,host FROM urls where visited=0 order by RANDOM()) group by host order by RANDOM()"
+                "select url,host from (SELECT url,host FROM urls where visited=0 order by RANDOM()) group by host"
             ).fetchall()
             break
         except sqlite3.OperationalError:
             create_database(initial_url)
     return random_url
+
 
 def sanitize_url(url):
     url = url.strip()
@@ -235,6 +244,21 @@ def get_words(soup, content_url):
             output += "{} ".format(t)
     return " ".join(list(set(output.split())))
 
+def get_directory_tree(url):
+    #Host will have scheme, hostname and port
+    host='://'.join(urlsplit(url)[:2])
+    dtree=[]
+    for iter in range(1,len(PurePosixPath(unquote(urlparse(url).path)).parts[0:])):
+        dtree.append(str(host+'/'+'/'.join(PurePosixPath(unquote(urlparse(url).path)).parts[1:-iter])))
+    return dtree
+
+def is_open_directory(content, content_url):
+    host=urlsplit(initial_url)[1]
+    pattern=r'<title>Index of /|<h1>Index of /|\[To Parent Directory\]</A>|<title>'+re.escape(host)+' - /</title>|_sort=\'name\';SortDirsAndFilesName\(\);'
+    if re.findall(pattern,content):
+        print('### Is open directory -{}-'.format(content_url))
+        update_url_isopendir(content_url)
+        return True
 
 ###############################################################################
 def function_for_url(regexp_list):
@@ -242,9 +266,7 @@ def function_for_url(regexp_list):
         for regexp in regexp_list:
             url_functions.append((re.compile(regexp, flags=re.I | re.U), f))
         return f
-
     return get_url_function
-
 
 # url unsafe {}|\^~[]`
 # regex no need to escape '!', '"', '%', "'", ',', '/', ':', ';', '<', '=', '>', '@', and "`"
@@ -471,7 +493,6 @@ def full_img(args):
     insert_if_new_url(args[0], 0, "img")
     return True
 
-
 def get_images(soup, content_url):
     tags = soup("img")
     for tag in tags:
@@ -495,7 +516,6 @@ def get_images(soup, content_url):
                 insert_if_new_url(out_url, 0, "img")
     return True
 
-
 # iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 # -----------------------------------------------------------------------------------------------------------------------
 def function_for_content_type(regexp_list):
@@ -503,9 +523,13 @@ def function_for_content_type(regexp_list):
         for regexp in regexp_list:
             content_type_functions.append((re.compile(regexp, flags=re.I | re.U), f))
         return f
-
     return get_content_type_function
 
+
+def insert_directory_tree(content_url):
+    for url in get_directory_tree(content_url):
+        url = sanitize_url(url)
+        insert_if_new_url(url, 0, "dirtree")                        
 
 @function_for_content_type([r"^text/html$"])
 def content_type_download(args):
@@ -515,10 +539,13 @@ def content_type_download(args):
         return False
     get_links(soup, args[0])
     get_images(soup, args[0])
-    words = get_words(soup, args[0])
+    is_open_directory(str(soup), args[0])
+    if EXTRACT_WORDS:
+        words = get_words(soup, args[0])
+    else:
+        words = ''
     update_url(args[0], args[2],visited=args[1], words=words)
     return True
-
 
 @function_for_content_type(content_type_image_regex)
 def content_type_images(args):
@@ -530,9 +557,29 @@ def content_type_images(args):
 @function_for_content_type([r"^audio/midi$"])
 def content_type_midis(args):
     #download midi
-    args[3]
+    if not DOWNLOAD_MIDIS:
+        return True
     filename=os.path.basename(urlparse(args[0]).path)
-    f = open('midis/'+filename, "wb")
+    f = open(MIDIS_FOLDER+'/'+filename, "wb")
+    f.write(args[3])
+    f.close()
+    update_url(args[0], args[2], visited=args[1])
+    return True
+
+@function_for_content_type(
+    [
+        r"^adobe/pdf$",        
+        r"^application/pdf$",
+        r"^application/\.pdf$",
+        r"^application/pdfcontent\-length:",
+    ]
+)
+def content_type_pdfs(args):
+    #download pdfs
+    if not DOWNLOAD_PDFS:
+        return True
+    filename=os.path.basename(urlparse(args[0]).path)
+    f = open(PDFS_FOLDER+'/'+filename, "wb")
     f.write(args[3])
     f.close()
     update_url(args[0], args[2], visited=args[1])
@@ -541,9 +588,7 @@ def content_type_midis(args):
 @function_for_content_type(
     [
         r"^\*/\*$",
-        r"^adobe/pdf$",        
         r"^application/\*$",        
-        r"^application/pdf$",
         r"^application/xml$",
         r"^application/rar$",
         r"^application/zip$",
@@ -567,7 +612,6 @@ def content_type_midis(args):
         r"^application/zlib$",        
         r"^application/\.zip$",
         r"^application/\.rar$",
-        r"^application/\.pdf$",
         r"^application/x\-xz$",
         r"^application/x\-sh$",
         r"^application/x\-twb$",
@@ -626,7 +670,6 @@ def content_type_midis(args):
         r"^application/x\-zip\-compressed$",
         r"^application/x\-rar\-compressed$",
         r"^application/x\-debian\-package$", 
-        r"^application/pdfcontent\-length:",
         r"^application/privatetempstorage$",        
         r"^application/x\-httpd\-ea\-php54$",                
         r"^application/x\-httpd\-ea\-php71$",        
@@ -821,13 +864,15 @@ def stats():
     )
 
 con = sqlite3.connect("crawler.db", timeout=60)
-
 for iteration in range(iterations):
     random_urls = get_random_unvisited_domains()
     for target_url in random_urls:
         if not is_host_block_listed(target_url[1]) and is_host_allow_listed(target_url[1]) and not is_url_block_listed(target_url[0]):
             try:
+                print(target_url[0])
                 get_page(target_url[0])
+                if HUNT_OPEN_DIRECTORIES:
+                    insert_directory_tree(target_url[0])
             except UnicodeEncodeError:
                 pass
     #print("End of iteration {}".format(iteration))
