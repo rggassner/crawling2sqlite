@@ -53,7 +53,6 @@ content_type_image_regex = [
         r"^application/jpg$",        
     ]
 
-
 def break_after(seconds=60):
     def timeout_handler(signum, frame):  # Custom signal handler
         raise TimeoutException
