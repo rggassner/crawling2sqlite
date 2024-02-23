@@ -1,9 +1,4 @@
-import gzip
-import zlib
-import signal
-import ssl
-import urllib.error
-import urllib.request
+import gzip,zlib,signal,ssl,urllib.error,urllib.request,config
 from http.client import IncompleteRead, InvalidURL, BadStatusLine, HTTPException
 from io import BytesIO
 from socket import timeout
@@ -11,16 +6,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from django.utils.encoding import force_str
 from random_user_agent.user_agent import UserAgent
 from random_user_agent.params import SoftwareName, OperatingSystem
-
-MAX_DOWNLOAD_TIME = 600
-software_names = [SoftwareName.CHROME.value]
-operating_systems = [OperatingSystem.WINDOWS.value, OperatingSystem.LINUX.value]
-
-user_agent_rotator = UserAgent(software_names=software_names, operating_systems=operating_systems, limit=100)
-
-ctx = ssl.create_default_context()
-ctx.check_hostname = False
-ctx.verify_mode = ssl.CERT_NONE
+from fake_useragent import UserAgent
 
 content_type_image_regex = [
         r"^image/$",        
@@ -53,6 +39,7 @@ content_type_image_regex = [
         r"^application/jpg$",        
     ]
 
+
 def break_after(seconds=60):
     def timeout_handler(signum, frame):  # Custom signal handler
         raise TimeoutException
@@ -77,16 +64,24 @@ def break_after(seconds=60):
 
     return function
 
-
 # This "break_after" is a decorator, not intended for timeouts,
 # but for links that take too long downloading, like streamings
 # or large files.
-@break_after(MAX_DOWNLOAD_TIME)
+@break_after(config.MAX_DOWNLOAD_TIME)
 def read_web(url):
     try:
+        ua = UserAgent()
+        user_agent = ua.random
         req = urllib.request.Request(smart_urlquote(url))
-        req.add_header("User-Agent", user_agent_rotator.get_random_user_agent())
-        response = urllib.request.urlopen(req, context=ctx, timeout=30)
+        req.add_header("User-Agent", user_agent)
+        if config.USE_PROXY:
+            proxies={'http' : config.PROXY_HOST, 'https': config.PROXY_HOST, 'ftp': config.PROXY_HOST}
+            proxy_handler = urllib.request.ProxyHandler(proxies)
+            opener = urllib.request.build_opener(proxy_handler)
+        else:
+            opener = urllib.request.build_opener()
+        urllib.request.install_opener(opener)
+        response = urllib.request.urlopen(req, timeout=30)
         content = response.read()
         content_type = response.info().get_content_type()
         if response.info().get("Content-Encoding") == "gzip":
