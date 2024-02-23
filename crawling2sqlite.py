@@ -1,41 +1,10 @@
 #!/usr/bin/python3
-import re,os
-import sqlite3
+import re,os,config,sqlite3
 from urllib.parse import urljoin, urlsplit,urlparse, unquote
 from bs4 import BeautifulSoup
 from functions import read_web, content_type_image_regex
 from pathlib import PurePosixPath
 
-EXTRACT_WORDS=False
-HUNT_OPEN_DIRECTORIES=True
-
-DOWNLOAD_MIDIS=False
-MIDIS_FOLDER='midis'
-
-DOWNLOAD_PDFS=False
-PDFS_FOLDER='pdfs'
-
-initial_url = "https://www.uol.com.br"
-
-#Every iteration one random url for every unique domain in the database is crawled.
-iterations = 1000
-
-#be_greedy = True - Save urls to database that might not work, since have not matched any regex.
-be_greedy=False
-
-# host_regex_block_list do not crawl these domains. Some urls might be inserted, added from allow lists, but they are never crawled.
-host_regex_block_list = [
-    "instagram\.com$",
-]
-
-#do not crawl urls that match any of these regexes
-url_regex_block_list = [
-    "/noticias/modules/noticias/modules/noticias/modules/",
-    "/images/images/images/images/",    
-    "/image/image/image/image/",        
-]
-
-host_regex_allow_list = [r".*"]
 url_functions = []
 img_functions = []
 content_type_functions = []
@@ -74,14 +43,14 @@ def create_database(initial_url):
 
 # Verify if host is in a blocklist.
 def is_host_block_listed(url):
-    for regex in host_regex_block_list:
+    for regex in config.host_regex_block_list:
         if re.search(regex, url, flags=re.I | re.U):
             return True
     return False
 
 # Verify if url is in a blocklist.
 def is_url_block_listed(url):
-    for regex in url_regex_block_list:
+    for regex in config.url_regex_block_list:
         if re.search(regex, url, flags=re.I | re.U):
             print('####### URL is block listed {}'.format(url))
             return True
@@ -89,7 +58,7 @@ def is_url_block_listed(url):
 
 # Verify if url is in a allowlist.
 def is_host_allow_listed(url):
-    for regex in host_regex_allow_list:
+    for regex in config.host_regex_allow_list:
         if re.search(regex, url, flags=re.I | re.U):
             return True
     return False
@@ -154,7 +123,7 @@ def update_url(url, content_type,visited="", words="",source='href'):
 #            ).fetchall()
 #            break
 #        except sqlite3.OperationalError:
-#            create_database(initial_url)
+#            create_database(config.INITIAL_URL)
 #    return random_url
 
 #Uses more resources, but will spread the connections 
@@ -164,11 +133,11 @@ def get_random_unvisited_domains():
         try:
             cur = con.cursor()
             random_url = cur.execute(
-                "select url,host from (SELECT url,host FROM urls where visited=0 order by RANDOM()) group by host"
+                "select url,host from (SELECT url,host FROM urls where visited=0 order by RANDOM()) group by host order by RANDOM()"
             ).fetchall()
             break
         except sqlite3.OperationalError:
-            create_database(initial_url)
+            create_database(config.INITIAL_URL)
     return random_url
 
 
@@ -253,7 +222,7 @@ def get_directory_tree(url):
     return dtree
 
 def is_open_directory(content, content_url):
-    host=urlsplit(initial_url)[1]
+    host=urlsplit(content_url)[1]
     pattern=r'<title>Index of /|<h1>Index of /|\[To Parent Directory\]</A>|<title>'+re.escape(host)+' - /</title>|_sort=\'name\';SortDirsAndFilesName\(\);'
     if re.findall(pattern,content):
         print('### Is open directory -{}-'.format(content_url))
@@ -434,7 +403,7 @@ def get_links(soup, content_url):
             out_url = urljoin(content_url, url)
             print("Unexpected URL -{}- Reference URL -{}-".format(url, content_url))
             print("Unexpected URL. Would this work? -{}-".format(out_url))   
-            if be_greedy:
+            if config.BE_GREEDY:
                 insert_if_new_url(out_url, 0, "href")                        
     return True
 
@@ -512,7 +481,7 @@ def get_images(soup, content_url):
             out_url = urljoin(content_url,url)
             print("Unexpected Image -{}- Reference URL -{}-".format(url, content_url))
             print("Unexpected Image. Would this work? -{}-".format(out_url))
-            if be_greedy:
+            if config.BE_GREEDY:
                 insert_if_new_url(out_url, 0, "img")
     return True
 
@@ -540,7 +509,7 @@ def content_type_download(args):
     get_links(soup, args[0])
     get_images(soup, args[0])
     is_open_directory(str(soup), args[0])
-    if EXTRACT_WORDS:
+    if config.EXTRACT_WORDS:
         words = get_words(soup, args[0])
     else:
         words = ''
@@ -557,10 +526,10 @@ def content_type_images(args):
 @function_for_content_type([r"^audio/midi$"])
 def content_type_midis(args):
     #download midi
-    if not DOWNLOAD_MIDIS:
+    if not config.DOWNLOAD_MIDIS:
         return True
     filename=os.path.basename(urlparse(args[0]).path)
-    f = open(MIDIS_FOLDER+'/'+filename, "wb")
+    f = open(config.MIDIS_FOLDER+'/'+filename, "wb")
     f.write(args[3])
     f.close()
     update_url(args[0], args[2], visited=args[1])
@@ -576,10 +545,10 @@ def content_type_midis(args):
 )
 def content_type_pdfs(args):
     #download pdfs
-    if not DOWNLOAD_PDFS:
+    if not config.DOWNLOAD_PDFS:
         return True
     filename=os.path.basename(urlparse(args[0]).path)
-    f = open(PDFS_FOLDER+'/'+filename, "wb")
+    f = open(config.PDFS_FOLDER+'/'+filename, "wb")
     f.write(args[3])
     f.close()
     update_url(args[0], args[2], visited=args[1])
@@ -864,17 +833,18 @@ def stats():
     )
 
 con = sqlite3.connect("crawler.db", timeout=60)
-for iteration in range(iterations):
+for iteration in range(config.ITERATIONS):
     random_urls = get_random_unvisited_domains()
     for target_url in random_urls:
         if not is_host_block_listed(target_url[1]) and is_host_allow_listed(target_url[1]) and not is_url_block_listed(target_url[0]):
             try:
                 print(target_url[0])
                 get_page(target_url[0])
-                if HUNT_OPEN_DIRECTORIES:
+                if config.HUNT_OPEN_DIRECTORIES:
                     insert_directory_tree(target_url[0])
             except UnicodeEncodeError:
                 pass
     #print("End of iteration {}".format(iteration))
     #stats()
+    #select 'Visited '|| count(*) from urls  where visited = '1'; select 'Distinct domains ' || count(distinct(host)) from urls ;select 'Total urls ' || count(*) from urls; select 'dirtree ' || count(*) from urls where source ='dirtree'; select 'Is open dir ' || count(*) from urls where isopendir = '1'; select url from urls where isopendir = '1' group by host;
 con.close()
