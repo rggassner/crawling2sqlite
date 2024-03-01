@@ -11,7 +11,7 @@ import opennsfw2 as n2
 import numpy as np
 
 nsfw_directory = "images/nsfw/"
-min_image_res = 64 * 64
+min_image_res = 224 * 224
 save_nsfw=True
 
 model = n2.make_open_nsfw_model()
