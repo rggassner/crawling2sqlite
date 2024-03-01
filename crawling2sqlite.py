@@ -30,11 +30,11 @@ def create_database(initial_url):
     con = sqlite3.connect("crawler.db")
     cur = con.cursor()
     cur.execute(
-        """CREATE TABLE urls (url text, visited boolean, isopendir boolean, content_type text, source text, words text, host text, resolution integer, UNIQUE (url))"""
+        """CREATE TABLE urls (url text, visited boolean, isopendir boolean, isnsfw real, content_type text, source text, words text, host text, resolution integer, UNIQUE (url))"""
     )
     cur.execute("""CREATE TABLE emails (url text, email text, UNIQUE (url,email))""")
     cur.execute(
-        "INSERT INTO urls (url,visited,isopendir,content_type,source,words,host) VALUES (?,0,0,'','href','',?)",
+        "INSERT INTO urls (url,visited,isopendir,isnsfw,content_type,source,words,host) VALUES (?,0,0,0,'','href','',?)",
         (initial_url, host),
     )
     con.commit()
@@ -749,6 +749,7 @@ def get_page(url):
             print("UNKNOWN type -{}- -{}-".format(url, content_type))
     else:
         # Page request didn't work
+        print('---------Erro {}'.format(url))
         update_url(url, "", visited=2)
 
 
