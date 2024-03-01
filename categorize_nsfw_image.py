@@ -36,15 +36,12 @@ def get_unvisited_img():
     return list(zip(*images))[0]
 
 def categorize_image(url):
-    save=True
     response = read_web(url)
     if not response:
         return False
     try:
         img = Image.open(BytesIO(response[0]))
         width, height = img.size
-        if (width * height) < min_image_res:
-            save=False
     except UnidentifiedImageError as e:
         #SVG using cairo in the future
         return False
