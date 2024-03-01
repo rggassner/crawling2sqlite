@@ -92,3 +92,4 @@ for image in get_unvisited_img():
     else:
         update_visited(image, 2,is_nsfw,'error',0)
 con.close()
+#select a,h,c from (select avg(isnsfw) as a,host as h,count(*) as c from urls where isnsfw != '' and resolution >= 224*224 group by host ) where a > .3 and c > 4 order by a;
