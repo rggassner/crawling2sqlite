@@ -4,6 +4,7 @@ from urllib.parse import urljoin, urlsplit,urlparse, unquote
 from bs4 import BeautifulSoup
 from functions import read_web, content_type_image_regex
 from pathlib import PurePosixPath
+import bs4.builder
 
 url_functions = []
 img_functions = []
@@ -506,6 +507,8 @@ def content_type_download(args):
         soup = BeautifulSoup(args[3], "html.parser")
     except UnboundLocalError as e:
         return False
+    except bs4.builder.ParserRejectedMarkup as e:
+        return False    
     get_links(soup, args[0])
     get_images(soup, args[0])
     is_open_directory(str(soup), args[0])
