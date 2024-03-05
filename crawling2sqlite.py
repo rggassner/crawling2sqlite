@@ -123,8 +123,11 @@ def update_url(url, content_type,visited="", words="",source='href'):
 #                "SELECT url,host FROM urls WHERE rowid > ( ABS(RANDOM()) % (SELECT max(rowid) FROM urls)) and visited=0 LIMIT 1"
 #            ).fetchall()
 #            break
-#        except sqlite3.OperationalError:
-#            create_database(config.INITIAL_URL)
+#        except sqlite3.OperationalError as e:
+#            if "no such table: urls" in str(e):
+#                create_database(config.INITIAL_URL)
+#        else:
+#            print("Error:", e)
 #    return random_url
 
 #Uses more resources, but will spread the connections 
@@ -137,8 +140,11 @@ def get_random_unvisited_domains():
                 "select url,host from (SELECT url,host FROM urls where visited=0 order by RANDOM()) group by host order by RANDOM()"
             ).fetchall()
             break
-        except sqlite3.OperationalError:
-            create_database(config.INITIAL_URL)
+        except sqlite3.OperationalError as e:
+            if "no such table: urls" in str(e):
+                create_database(config.INITIAL_URL)
+        else:
+            print("Error:", e)
     return random_url
 
 
