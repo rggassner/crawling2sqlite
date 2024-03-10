@@ -1,14 +1,18 @@
-import gzip,zlib,signal,ssl,urllib.error,urllib.request,config
-from http.client import IncompleteRead, InvalidURL, BadStatusLine, HTTPException
-from io import BytesIO
-from socket import timeout
-from urllib.parse import quote, unquote, urlsplit, urlunsplit
-from django.utils.encoding import force_str
-from random_user_agent.user_agent import UserAgent
-from random_user_agent.params import SoftwareName, OperatingSystem
-from fake_useragent import UserAgent
+content_type_html_regex=[
+        r"^text/html$",
+        r"^text/html, charset=iso-8859-1$",
+        ]
+
+content_type_pdf = [
+        r"^adobe/pdf$",
+        r"^application/pdf$",
+        r"^application/\.pdf$",
+        r"^application/pdfcontent-length:",
+    ]
 
 content_type_image_regex = [
+        r"^webp$",
+        r"^.jpeg$",
         r"^image/$",        
         r"^img/jpeg$",    
         r"^image/\*$",
@@ -25,115 +29,302 @@ content_type_image_regex = [
         r"^image/webp$",
         r"^image/pjpeg$",
         r"^image/dicomp$", 
-        r"^image/x\-png$",
-        r"^image/x\-eps$",
+        r"^image/x-png$",
+        r"^image/x-eps$",
         r"^image/\{png\}$", 
-        r"^image/x\-icon$",
+        r"^image/x-icon$",
         r"^image/vnd\.dwg$",    
         r"^image/svg\+xml$",
-        r"^image/x\-ms\-bmp$",        
+        r"^image/x-ms-bmp$",        
         r"^image/x-photoshop$",         
-        r"^image/x\-coreldraw$",        
+        r"^image/x-coreldraw$",        
         r"^image/vnd\.wap\.wbmp$",
         r"^image/vnd\.microsoft\.icon$",
         r"^application/jpg$",        
     ]
 
 
-def break_after(seconds=60):
-    def timeout_handler(signum, frame):  # Custom signal handler
-        raise TimeoutException
+url_all_others_regex =[
+        r"^#",
+        r"^$",
+        r"^\$",
+        r"^tg:",
+        r"^fb:",        
+        r"^app:",
+        r"^apt:",
+        r"^geo:",
+        r"^sms:",
+        r"^ssh:",
+        r"^fax:",
+        r"^fon:",
+        r"^git:",
+        r"^svn:",
+        r"^wss:",
+        r"^mms:",
+        r"^aim:",
+        r"^rtsp:",        
+        r"^file:",
+        r"^feed:",
+        r"^itpc:",
+        r"^news:",
+        r"^atom:",
+        r"^nntp:",
+        r"^sftp:",
+        r"^data:",
+        r"^apps:",
+        r"^xmpp:",
+        r"^void:",
+        r"^waze:",        
+        r"^itms:",         
+        r"^viber:",
+        r"^steam:",
+        r"^ircs*:",
+        r"^skype:",
+        r"^ymsgr:",
+        r"^event:",
+        r"^about:",
+        r"^movie:",
+        r"^rsync:",
+        r"^popup:",        
+        r"^itmss:",
+        r"^chrome:",
+        r"^telnet:",
+        r"^webcal:",
+        r"^magnet:",
+        r"^vscode:",
+        r"^mumble:",
+        r"^unsafe:",        
+        r"^podcast:",
+        r"^spotify:",
+        r"^bitcoin:",
+        r"^threema:",
+        r"^\.onion$",
+        r"^\(none\)$",
+        r"^ethereum:",
+        r"^litecoin:",
+        r"^whatsapp:",
+        r"^appstream:",
+        r"^worldwind:",
+        r"^x-webdoc:",
+        r"^applenewss:",
+        r"^itms-apps:",
+        r"^itms-beta:",
+        r"^santanderpf:",        
+        r"^bitcoincash:",
+        r"^android-app:",
+        r"^ms-settings:",
+        r"^applewebdata:",
+        r"^fb-messenger:",
+        r"^moz-extension:",
+        r"^microsoft-edge:",
+        r"^x-help-action:",
+        r"^digitalassistant:",     
+        r"^chrome-extension:",
+        r"^ms-windows-store:",
+        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:|tek:|sip:|to:|SAC:|facetime-audio:|telefone:|telegram:|tel\+:|tal:|tele:|tels:|cal:|tel\.:)",
+        r"^(javascript:|javacscript:|javacript:|javascripy:|javscript:|javascript\.|javascirpt:|javascript;|javascriot:|javascritp:|havascript:|javescript:|javascrip:|javascrpit:|js:|javascripr:|javastript:|javascipt:|javsacript:|javasript:|javascrit:|javascriptt:|ja vascript:|javascrtipt:|jasvascript:|javascropt:|jvascript:|javasctipt:|avascript:|javacsript:)",
+        ]
 
-    def function(function):
-        def wrapper(*args, **kwargs):
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(seconds)
-            try:
-                res = function(*args, **kwargs)
-                signal.alarm(0)  # Clear alarm
-                return res
-            except TimeoutException:
-                print(
-                    "Oops, timeout: {} {} {} {} sec reached.".format(
-                        seconds, function.__name__, args, kwargs
-                    )
-                )
-            return
-
-        return wrapper
-
-    return function
-
-# This "break_after" is a decorator, not intended for timeouts,
-# but for links that take too long downloading, like streamings
-# or large files.
-@break_after(config.MAX_DOWNLOAD_TIME)
-def read_web(url):
-    try:
-        ua = UserAgent()
-        user_agent = ua.random
-        req = urllib.request.Request(smart_urlquote(url))
-        req.add_header("User-Agent", user_agent)
-        if config.USE_PROXY:
-            proxies={'http' : config.PROXY_HOST, 'https': config.PROXY_HOST, 'ftp': config.PROXY_HOST}
-            proxy_handler = urllib.request.ProxyHandler(proxies)
-            opener = urllib.request.build_opener(proxy_handler)
-        else:
-            opener = urllib.request.build_opener()
-        urllib.request.install_opener(opener)
-        response = urllib.request.urlopen(req, timeout=30)
-        content = response.read()
-        content_type = response.info().get_content_type()
-        if response.info().get("Content-Encoding") == "gzip":
-            buf = BytesIO(content)
-            f = gzip.GzipFile(fileobj=buf)
-            outc = f.read()
-            return [outc, content_type]
-        elif response.info().get("Content-Encoding") == "deflate":
-            data = BytesIO(zlib.decompress(content))
-            outc = data.read()
-            return [outc, content_type]
-    except urllib.error.HTTPError as e:
-        return False
-    except urllib.error.URLError as e:
-        return False
-    except timeout:
-        return False
-    except UnicodeError:
-        return False
-    except ConnectionResetError:
-        return False
-    except IncompleteRead as e:
-        return False
-    except InvalidURL as e:
-        return False
-    except BadStatusLine as e:
-        return False
-    except ssl.SSLError as e:
-        return False
-    except gzip.BadGzipFile as e:
-        return False
-    except zlib.error as e:
-        return False
-    except HTTPException as e:
-        return False
-    return [content, content_type]
-
-# encode whitespaces from urls
-def smart_urlquote(url):
-    # Handle IDN before quoting.
-    scheme, netloc, path, query, fragment = urlsplit(url)
-    try:
-        netloc = netloc.encode("idna").decode("ascii")  # IDN -> ACE
-    except UnicodeError:  # invalid domain part
-        pass
-    else:
-        url = urlunsplit((scheme, netloc, path, query, fragment))
-    url = unquote(force_str(url))
-    # See http://bugs.python.org/issue2637
-    url = quote(url, safe=b"!*'();:@&=+$,/?#[]~")
-    return force_str(url)
-
-
-class TimeoutException(Exception):  # Custom exception class
-    pass
+content_type_all_others_regex = [
+        r"^\*/\*$",
+        r"^font/ttf$",
+        r"^font/otf$",
+        r"^font/woff$",
+        r"^font/woff2$",
+        r"^font/x-woff$",
+        r"^x-font/woff$",
+        r"^font/x-woff2$",
+        r"^font/opentype$",
+        r"^application/\*$",
+        r"^application/xml$",
+        r"^application/rar$",
+        r"^application/zip$",
+        r"^application/avi$",
+        r"^application/doc$",
+        r"^application/xls$",
+        r"^application/rtf$",
+        r"^application/ogg$",
+        r"^application/mp3$",
+        r"^application/csv$",
+        r"^application/wmv$",
+        r"^application/epub$",
+        r"^application/xlsx$",
+        r"^application/docx$",
+        r"^application/text$",
+        r"^application/wasm$",
+        r"^application/woff$",
+        r"^application/json$",
+        r"^application/mobi$",
+        r"^application/gzip$",
+        r"^application/save$",
+        r"^application/null$",
+        r"^application/zlib$",
+        r"^application/x-xz$",
+        r"^application/x-sh$",
+        r"^application/x-twb$",
+        r"^application/x-tar$",
+        r"^application/x-rar$",
+        r"^application/\.zip$",
+        r"^application/\.rar$",
+        r"^application/x-msi$",
+        r"^application/x-zip$",
+        r"^application/x-xar$",
+        r"^application/x-tgif$",
+        r"^application/x-gzip$",
+        r"^application/binary$",
+        r"^application/msword$",
+        r"^application/msword$",
+        r"^application/msexcel$",
+        r"^application/unknown$",
+        r"^application/xml-dtd$",
+        r"^application/x-bzip2$",
+        r"^application/x-binary$",
+        r"^application/ld\+json$",
+        r"^application/rdf\+xml$",
+        r"^application/download$",
+        r"^application/rss\+xml$",
+        r"^application/ms-excel$",
+        r"^application/font-ttf$",
+        r"^application/x-msword$",
+        r"^application/pgp-keys$",
+        r"^application/x-bibtex$",
+        r"^application/pkix-crl$",
+        r"^application/x-tar-gz$",
+        r"^application/font-sfnt$",
+        r"^application/hal\+json$",
+        r"^application/ttml\+xml$",
+        r"^application/x-dosexec$",
+        r"^application/ion\+json$",
+        r"^application/epub\+zip$",
+        r"^application/atom\+xml$",
+        r"^application/x-msexcel$",
+        r"^application/pkix-cert$",
+        r"^application/x-mpegurl$",
+        r"^application/font-woff$",
+        r"^application/postscript$",
+        r"^application/x-font-ttf$",
+        r"^application/x-font-otf$",
+        r"^application/xhtml\+xml$",
+        r"^application/x-rss\+xml$",
+        r"^application/ecmascript$",
+        r"^application/pkcs7-mime$",
+        r"^application/font-woff2$",
+        r"^application/javascript$",
+        r"^application/vnd\.yt-ump$",
+        r"^application/x-font-woff$",
+        r"^application/x-xpinstall$",
+        r"^application/x-httpd-php$",
+        r"^application/x-troff-man$",
+        r"^application/java-archive$",
+        r"^application/x-javascript$",
+        r"^application/x-msdownload$",
+        r"^application/x-font-woff2$",
+        r"^application/octet-stream$",
+        r"^application/vnd\.ms-word$",
+        r"^application/x-executable$",
+        r"^application/x-base64-frpc$",
+        r"^application/pgp-signature$",
+        r"^application/vnd\.ms-excel$",
+        r"^application/force-download$",
+        r"^application/x-x509-ca-cert$",
+        r"^application/x-msdos-program$",
+        r"^application/x-font-opentype$",
+        r"^application/x-iso9660-image$",
+        r"^application/x-ms-application$",
+        r"^application/x-zip-compressed$",
+        r"^application/x-rar-compressed$",
+        r"^application/x-debian-package$",
+        r"^application/x-httpd-ea-php54$",
+        r"^application/x-java-jnlp-file$",
+        r"^application/x-httpd-ea-php71$",
+        r"^application/x-gtar-compressed$",
+        r"^application/x-shockwave-flash$",
+        r"^application/vnd\.ogc\.wms_xml$",
+        r"^application/vnd.ms-fontobject$",
+        r"^application/x-apple-diskimage$",
+        r"^application/x-chrome-extension$",
+        r"^application/x-mobipocket-ebook$",
+        r"^application/privatetempstorage$",
+        r"^application/vnd\.ms-powerpoint$",
+        r"^application/vnd\.ms-officetheme$",
+        r"^application/x-ms-dos-executable$",
+        r"^application/vnd\.apple\.mpegurl$",
+        r"^application/x-pkcs7-certificates$",
+        r"^application/x-research-info-systems$",
+        r"^application/vnd\.ms-word\.document\.12$",
+        r"^application/opensearchdescription\+xml$",
+        r"^application/vnd\.google-earth\.kml\+xml$",
+        r"^application/vnd\.ms-excel\.openxmlformat$",
+        r"^application/vnd\.android\.package-archive$",
+        r"^application/vnd\.oasis\.opendocument\.text$",
+        r"^application/x-zip-compressedcontent-length:",
+        r"^application/vnd\.contentful\.delivery\.v1\+json$",
+        r"^application/vnd\.spring-boot\.actuator\.v3\+json$",
+        r"^application/vnd\.oasis\.opendocument\.spreadsheet$",
+        r"^application/vnd\.oasis\.opendocument\.presentation$",
+        r"^application/vnd\.ms-excel\.sheet\.macroenabled\.12$",
+        r"^application/vnd.oasis.opendocument.formula-template$",
+        r"^application/vnd\.openxmlformats-officedocument\.spre$",
+        r"^application/vnd\.adobe\.air-application-installer-package\+zip$",
+        r"^application/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet$",
+        r"^application/vnd\.openxmlformats-officedocument\.presentationml\.slideshow",
+        r"^application/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$",
+        r"^application/vnd\.openxmlformats-officedocument\.wordprocessingml\.template$",
+        r"^application/vnd\.openxmlformats-officedocument\.presentationml\.presentation$",
+        r"^audio/ogg$",
+        r"^audio/mp3$",
+        r"^audio/mp4$",
+        r"^audio/wav$",
+        r"^audio/mpeg$",
+        r"^audio/opus$",
+        r"^audio/x-rpm$",
+        r"^audio/x-wav$",
+        r"^audio/unknown$",
+        r"^audio/x-scpls$",
+        r"^audio/x-ms-wma$",
+        r"^audio/x-mpegurl$",
+        r"^audio/x-pn-realaudio$",
+        r"^binary/octet-stream$",
+        r"^Content-Type$",
+        r"^javascript charset=UTF-8$",
+        r"^model/usd$",
+        r"^model/obj$",
+        r"^multipart/x-zip$",
+        r"^multipart/form-data$",
+        r"^multipart/x-mixed-replace$",
+        r"^octet/stream$",
+        r"^text/xml$",
+        r"^text/css$",
+        r"^text/csv$",
+        r"^text/vtt$",
+        r"^text/rtf$",
+        r"^text/x-sh$",
+        r"^text/json$",
+        r"^text/vcard$",
+        r"^text/plain$",
+        r"^text/x-tex$",
+        r"^text/x-chdr$",
+        r"^text/turtle$",
+        r"^text/x-vcard$",
+        r"^text/calendar$",
+        r"^text/x-bibtex$",
+        r"^text/directory$",
+        r"^text/javascript$",
+        r"^text/x-vcalendar$",
+        r"^text/x-component$",
+        r"^text/fragment\+html$",
+        r"^text/x-comma-separated-values$",
+        r"^text/vnd\.reddit\.partial\+html$",
+        r"^video/mp4$",
+        r"^video/ogg$",
+        r"^video/f4v$",
+        r"^video/webm$",
+        r"^video/MP2T$",
+        r"^video/mpeg$",
+        r"^video/x-flv$",
+        r"^video/quicktime$",
+        r"^video/x-ms-wmv$",
+        r"^video/x-ms-asf$",
+        r"^video/x-msvideo$",
+        r"^x-application/octet-stream$",
+        ]
