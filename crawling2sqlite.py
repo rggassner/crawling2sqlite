@@ -1,15 +1,29 @@
 #!/usr/bin/python3
-import re,os,config,sqlite3
-from urllib.parse import urljoin, urlsplit,urlparse, unquote
+import re
+from config import *
+import sqlite3
+from urllib.parse import urlsplit
+from fake_useragent import UserAgent
+from seleniumwire import webdriver
+from seleniumwire.utils import decode
+import time
+import os
+from urllib.parse import unquote,urljoin,urlparse
 from bs4 import BeautifulSoup
-from functions import read_web, content_type_image_regex
+from functions import *
 from pathlib import PurePosixPath
 import bs4.builder
+import opennsfw2 as n2
+from PIL import Image, UnidentifiedImageError
+import hashlib
+import numpy as np
+import signal
+from io import BytesIO
 
 url_functions = []
-img_functions = []
 content_type_functions = []
-#used to generate wordlist
+
+##used to generate wordlist
 soup_tag_blocklist = [
     "[document]",
     "noscript",
@@ -22,7 +36,7 @@ soup_tag_blocklist = [
     "style",
 ]
 
-def create_database(initial_url):
+def db_create_database(initial_url):
     print("Creating database.")
     try:
         host = urlsplit(initial_url)[1]
@@ -31,7 +45,7 @@ def create_database(initial_url):
     con = sqlite3.connect("crawler.db")
     cur = con.cursor()
     cur.execute(
-        """CREATE TABLE urls (url text, visited boolean, isopendir boolean, isnsfw real, content_type text, source text, words text, host text, resolution integer, UNIQUE (url))"""
+        """CREATE TABLE urls (url text, visited boolean, isopendir boolean, isnsfw real, content_type text, source text, words text, host text, parent_host text, resolution integer, UNIQUE (url))"""
     )
     cur.execute("""CREATE TABLE emails (url text, email text, UNIQUE (url,email))""")
     cur.execute(
@@ -41,25 +55,23 @@ def create_database(initial_url):
     con.commit()
     con.close()
 
-
-# Verify if host is in a blocklist.
+## Verify if host is in a blocklist.
 def is_host_block_listed(url):
-    for regex in config.host_regex_block_list:
+    for regex in host_regex_block_list:
         if re.search(regex, url, flags=re.I | re.U):
             return True
     return False
 
-# Verify if url is in a blocklist.
+## Verify if url is in a blocklist.
 def is_url_block_listed(url):
-    for regex in config.url_regex_block_list:
+    for regex in url_regex_block_list:
         if re.search(regex, url, flags=re.I | re.U):
-            print('####### URL is block listed {}'.format(url))
             return True
     return False
 
-# Verify if url is in a allowlist.
+## Verify if url is in a allowlist.
 def is_host_allow_listed(url):
-    for regex in config.host_regex_allow_list:
+    for regex in host_regex_allow_list:
         if re.search(regex, url, flags=re.I | re.U):
             return True
     return False
@@ -69,7 +81,7 @@ def remove_jsessionid_with_semicolon(url):
     cleaned_url = re.sub(pattern, '', url)
     return cleaned_url
 
-def insert_if_new_url(url, visited, source, content_type="", words=""):
+def db_insert_if_new_url(url='', visited='', source='', content_type="", words="",isnsfw='',resolution='',parent_host=''):
     try:
         host = urlsplit(url)[1]
     except ValueError as e:
@@ -77,20 +89,28 @@ def insert_if_new_url(url, visited, source, content_type="", words=""):
     url=remove_jsessionid_with_semicolon(url)
     cur = con.cursor()
     cur.execute(
-        "insert or ignore into urls (url,visited,content_type,source,words,host) values (?,?,?,?,?,?)",
-        (url, visited, content_type, source, words, host),
+        "insert or ignore into urls (url,visited,content_type,source,words,host,isnsfw,resolution,parent_host) values (?,?,?,?,?,?,?,?,?)",
+        (url, visited, content_type, source, words, host, isnsfw,resolution,parent_host),
     )
     con.commit()
     return True
 
+def db_count_url(url):
+    cur = con.cursor()
+    count_url=cur.execute(
+        "select count(url) from urls where url=(?)",
+        (url,),
+    ).fetchone()[0]
+    con.commit()
+    return count_url
 
-def insert_email(url, email):
+def db_insert_email(url='',email=''):
     cur = con.cursor()
     cur.execute("insert or ignore into emails (url,email) values (?,?)", (url, email))
     con.commit()
     return True
 
-def update_url_isopendir(url):
+def db_update_url_isopendir(url):
     cur = con.cursor()
     cur.execute(
         "update urls set (isopendir) = (?) where url = ?",
@@ -98,37 +118,36 @@ def update_url_isopendir(url):
     )
     con.commit()
 
-def update_url(url, content_type,visited="", words="",source='href'):
+def db_update_url(url='',content_type='',visited='',words='',source=''):
     cur = con.cursor()
-    if visited != "":
+    cur.execute(
+        "update urls set (visited,content_type,words,source) = (?,?,?,?) where url = ?",
+        (visited, content_type, words, source, url),
+    )
+    con.commit()
+    if url.endswith('/'):
+        url=url[:-1]
+        cur = con.cursor()
         cur.execute(
             "update urls set (visited,content_type,words,source) = (?,?,?,?) where url = ?",
             (visited, content_type, words, source, url),
         )
-    else:
-        cur.execute(
-            "update urls set (content_type,words,source) = (?,?,?) where url = ?",
-            (content_type, words, source, url),
-        )    
-    con.commit()
+        con.commit()
 
-#Fast and uses low memory, but hosts
-#with inumerous urls will have higher chances to be
-#selected, biasing the result.
-#def get_random_unvisited_domains():
-#    for i in range(3):
-#        try:
-#            cur = con.cursor()
-#            random_url = cur.execute(
-#                "SELECT url,host FROM urls WHERE rowid > ( ABS(RANDOM()) % (SELECT max(rowid) FROM urls)) and visited=0 LIMIT 1"
-#            ).fetchall()
-#            break
-#        except sqlite3.OperationalError as e:
-#            if "no such table: urls" in str(e):
-#                create_database(config.INITIAL_URL)
-#        else:
-#            print("Error:", e)
-#    return random_url
+##Fast and uses low memory, but hosts
+##with inumerous urls will have higher chances to be
+##selected, biasing the result.
+##def get_random_unvisited_domains():
+##    for i in range(3):
+##        try:
+##            cur = con.cursor()
+##            random_url = cur.execute(
+##                "SELECT url,host FROM urls WHERE rowid > ( ABS(RANDOM()) % (SELECT max(rowid) FROM urls)) and visited=0 and source != 'access' LIMIT 1"
+##            ).fetchall()
+##            break
+##        except sqlite3.OperationalError:
+##            db_create_database(INITIAL_URL)
+##    return random_url
 
 #Uses more resources, but will spread the connections 
 #evenly through the hosts. Expect the number of hosts to increase rapidly
@@ -137,16 +156,15 @@ def get_random_unvisited_domains():
         try:
             cur = con.cursor()
             random_url = cur.execute(
-                "select url,host from (SELECT url,host FROM urls where visited=0 order by RANDOM()) group by host order by RANDOM()"
+                "select url,host from (SELECT url,host FROM urls where visited=0 and source!= 'access' order by RANDOM()) group by host order by RANDOM()"
             ).fetchall()
             break
         except sqlite3.OperationalError as e:
             if "no such table: urls" in str(e):
-                create_database(config.INITIAL_URL)
+                db_create_database(INITIAL_URL)
         else:
             print("Error:", e)
     return random_url
-
 
 def sanitize_url(url):
     url = url.strip()
@@ -233,10 +251,9 @@ def is_open_directory(content, content_url):
     pattern=r'<title>Index of /|<h1>Index of /|\[To Parent Directory\]</A>|<title>'+re.escape(host)+' - /</title>|_sort=\'name\';SortDirsAndFilesName\(\);'
     if re.findall(pattern,content):
         print('### Is open directory -{}-'.format(content_url))
-        update_url_isopendir(content_url)
+        db_update_url_isopendir(content_url)
         return True
 
-###############################################################################
 def function_for_url(regexp_list):
     def get_url_function(f):
         for regexp in regexp_list:
@@ -244,8 +261,8 @@ def function_for_url(regexp_list):
         return f
     return get_url_function
 
-# url unsafe {}|\^~[]`
-# regex no need to escape '!', '"', '%', "'", ',', '/', ':', ';', '<', '=', '>', '@', and "`"
+## url unsafe {}|\^~[]`
+## regex no need to escape '!', '"', '%', "'", ',', '/', ':', ';', '<', '=', '>', '@', and "`"
 @function_for_url(
     [
         r"^(\/|\.\.\/|\.\/)",
@@ -254,8 +271,9 @@ def function_for_url(regexp_list):
     ]
 )
 def relative_url(args):
-    out_url = urljoin(args[1], args[0])
-    insert_if_new_url(out_url, 0, "href")
+    out_url = urljoin(args['parent_url'], args['url'])
+    parent_host=urlsplit(args['parent_url'])[1]
+    db_insert_if_new_url(url=out_url, visited=0, source="href",parent_host=parent_host)
     return True
 
 
@@ -268,87 +286,7 @@ def unsafe_character_url(args):
     return True
 
 
-@function_for_url(
-    [
-        r"^#",
-        r"^$",
-        r"^\$",
-        r"^tg:",
-        r"^fb:",        
-        r"^app:",
-        r"^apt:",
-        r"^geo:",
-        r"^sms:",
-        r"^ssh:",
-        r"^fax:",
-        r"^fon:",
-        r"^git:",
-        r"^svn:",
-        r"^wss:",
-        r"^mms:",
-        r"^aim:",
-        r"^rtsp:",        
-        r"^file:",
-        r"^feed:",
-        r"^itpc:",
-        r"^news:",
-        r"^atom:",
-        r"^nntp:",
-        r"^sftp:",
-        r"^data:",
-        r"^apps:",
-        r"^xmpp:",
-        r"^void:",
-        r"^waze:",        
-        r"^itms:",         
-        r"^viber:",
-        r"^steam:",
-        r"^ircs*:",
-        r"^skype:",
-        r"^ymsgr:",
-        r"^about:",
-        r"^movie:",
-        r"^rsync:",
-        r"^popup:",        
-        r"^itmss:",
-        r"^chrome:",
-        r"^telnet:",
-        r"^webcal:",
-        r"^magnet:",
-        r"^vscode:",
-        r"^mumble:",
-        r"^unsafe:",        
-        r"^podcast:",
-        r"^spotify:",
-        r"^bitcoin:",
-        r"^threema:",
-        r"^\.onion$",
-        r"^\(none\)$",
-        r"^ethereum:",
-        r"^litecoin:",
-        r"^whatsapp:",
-        r"^appstream:",
-        r"^worldwind:",
-        r"^x\-webdoc:",
-        r"^applenewss:",
-        r"^itms\-apps:",
-        r"^itms\-beta:",
-        r"^santanderpf:",        
-        r"^bitcoincash:",
-        r"^android\-app:",
-        r"^ms\-settings:",
-        r"^applewebdata:",
-        r"^fb\-messenger:",
-        r"^moz\-extension:",
-        r"^microsoft\-edge:",
-        r"^x\-help\-action:",
-        r"^digitalassistant:",     
-        r"^chrome\-extension:",
-        r"^ms\-windows\-store:",
-        r"^(tel:|tellto:|te:|callto:|TT:|tell:|telto:|phone:|calto:|call:|telnr:|tek:|sip:|to:|SAC:|facetime-audio:|telefone:|telegram:|tel\+:|tal:|tele:|tels:|cal:|tel\.:)",
-        r"^(javascript:|javacscript:|javacript:|javascripy:|javscript:|javascript\.|javascirpt:|javascript;|javascriot:|javascritp:|havascript:|javescript:|javascrip:|javascrpit:|js:|javascripr:|javastript:|javascipt:|javsacript:|javasript:|javascrit:|javascriptt:|ja vascript:|javascrtipt:|jasvascript:|javascropt:|jvascript:|javasctipt:|avascript:|javacsript:)",
-    ]
-)
+@function_for_url(url_all_others_regex)
 def do_nothing_url(args):
     # Do nothing with these regex. They are kept here only as a guideline if you
     # want to write your own functions for them
@@ -357,7 +295,8 @@ def do_nothing_url(args):
 
 @function_for_url([r"^https*://", r"^ftp://"])
 def full_url(args):
-    insert_if_new_url(args[0], 0, "href")
+    parent_host=urlsplit(args['parent_url'])[1]
+    db_insert_if_new_url(url=args['url'], visited='0', source="href",parent_host=parent_host)
     return True
 
 
@@ -369,7 +308,7 @@ def full_url(args):
 def email_url(args):
     address_search = re.search(
         r"^(mailto:|maillto:|maito:|mail:|malito:|mailton:|\"mailto:|emailto:|maltio:|mainto:|E\-mail:|mailtfo:|mailtp:|mailtop:|mailo:|mail to:|Email para:|email :|email:|E-mail: |mail-to:|maitlo:|mail.to:)(.*)",
-        args[0],
+        args['url'],
         flags=re.I | re.U,
     )
     if address_search:
@@ -378,7 +317,7 @@ def email_url(args):
             r"^([A-Za-z0-9]+[.-_])*[A-Za-z0-9]+@[A-Za-z0-9-]+(\.[A-Z|a-z]{2,})+$",
             address,
         ):
-            insert_email(args[1], address)
+            db_insert_email(url=args['parent_url'], email=address)
             return True
         else:
             return False
@@ -395,105 +334,29 @@ def get_links(soup, content_url):
     tags = soup("a")
     for tag in tags:
         url = tag.get("href", None)
+
         if type(url) != str:
             continue
         else:
             url = sanitize_url(url)
         found = False
-        for regex, function in url_functions:
-            m = regex.search(url)
-            if m:
-                found = True
-                function([url, content_url])
-                continue
-        if not found:
-            out_url = urljoin(content_url, url)
-            print("Unexpected URL -{}- Reference URL -{}-".format(url, content_url))
-            print("Unexpected URL. Would this work? -{}-".format(out_url))   
-            if config.BE_GREEDY:
-                insert_if_new_url(out_url, 0, "href")                        
+        host=urlsplit(url)[1]
+        if not is_host_block_listed(host) and is_host_allow_listed(host) and not is_url_block_listed(url):
+            for regex, function in url_functions:
+                m = regex.search(url)
+                if m:
+                    found = True
+                    function({'url':url,'parent_url': content_url})
+                    continue
+            if not found:
+                out_url = urljoin(content_url, url)
+                print("Unexpected URL -{}- Reference URL -{}-".format(url, content_url))
+                print("Unexpected URL. Would this work? -{}-".format(out_url))   
+                parent_host=urlsplit(content_url)[1]
+                if BE_GREEDY:
+                    db_insert_if_new_url(url=out_url,visited=0,source="href",content_type='',words='',parent_host=parent_host)                 
     return True
 
-###############################################################################
-# iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
-def function_for_img(regexp_list):
-    def get_img_function(f):
-        for regexp in regexp_list:
-            img_functions.append((re.compile(regexp, flags=re.I | re.U), f))
-        return f
-
-    return get_img_function
-
-
-@function_for_img(
-    [
-     r"^(\/|\.\.\/|\.\/)",
-     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬íÇâã€®]+$",
-     r"^[0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬´à]*[\?\/][0-9\-\./\?=_\&\s%@<>\(\);\+!,\w\$\'–’—”“ä°§£Ã¬:\"¶´]+$",        
-    ]
-)
-def relative_img(args):
-    out_url = urljoin(args[1], args[0])
-    insert_if_new_url(out_url, 0, "img")
-    return True
-
-
-@function_for_img(
-    [
-        r"(\{|\[|\||\}|\]|\~|\^|\\)",
-    ]
-)
-def unsafe_character_img(args):
-    return True
-
-
-@function_for_img(
-    [
-        r"^#",
-        r"^$",
-        r"^data:",
-        r"^about:",
-        r"^file:",
-        r"^blob:",
-        r"^chrome\-extension:",                
-    ]
-)
-def do_nothing_img(args):
-    # Do nothing with these matches. They are kept here only as a guideline if you
-    # want to write your own functions for them
-    return True
-
-
-@function_for_img([r"^https*://", r"^ftp://"])
-def full_img(args):
-    insert_if_new_url(args[0], 0, "img")
-    return True
-
-def get_images(soup, content_url):
-    tags = soup("img")
-    for tag in tags:
-        url = tag.get("src", None)
-        if type(url) != str:
-            continue
-        else:
-            url = sanitize_url(url)
-        found = False
-        for regex, function in img_functions:
-            m = regex.search(url)
-            if m:
-                found = True
-                function([url, content_url])
-                continue
-        if not found:
-            out_url = urljoin(content_url,url)
-            print("Unexpected Image -{}- Reference URL -{}-".format(url, content_url))
-            print("Unexpected Image. Would this work? -{}-".format(out_url))
-            if config.BE_GREEDY:
-                insert_if_new_url(out_url, 0, "img")
-    return True
-
-# iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
-# -----------------------------------------------------------------------------------------------------------------------
 def function_for_content_type(regexp_list):
     def get_content_type_function(f):
         for regexp in regexp_list:
@@ -503,234 +366,93 @@ def function_for_content_type(regexp_list):
 
 
 def insert_directory_tree(content_url):
+    parent_host=urlsplit(content_url)[1]
     for url in get_directory_tree(content_url):
         url = sanitize_url(url)
-        insert_if_new_url(url, 0, "dirtree")                        
+        db_insert_if_new_url(url=url, visited='0',source="dirtree",parent_host=parent_host)                        
 
-@function_for_content_type([r"^text/html$"])
+@function_for_content_type(content_type_html_regex)
 def content_type_download(args):
     try:
-        soup = BeautifulSoup(args[3], "html.parser")
+        soup = BeautifulSoup(args['content'], "html.parser")
     except UnboundLocalError as e:
+        print(e)
         return False
     except bs4.builder.ParserRejectedMarkup as e:
-        return False    
-    get_links(soup, args[0])
-    get_images(soup, args[0])
-    is_open_directory(str(soup), args[0])
-    if config.EXTRACT_WORDS:
-        words = get_words(soup, args[0])
+        print(e)
+        return False
+    get_links(soup, args['url'])
+    is_open_directory(str(soup), args['url'])
+    if EXTRACT_WORDS:
+        words = get_words(soup, args['url'])
     else:
         words = ''
-    update_url(args[0], args[2],visited=args[1], words=words)
+    db_insert_if_new_url(url=args['url'],visited=args['visited'],source=args['source'],content_type=args['content_type'],parent_host=args['parent_host'])
+    db_update_url(url=args['url'],content_type=args['content_type'],visited=args['visited'],words=words,source=args['source'])
     return True
 
 @function_for_content_type(content_type_image_regex)
 def content_type_images(args):
-    # Since we have an external downloader, update as not visited, and mark as a img source
-    ##do not pass visited
-    update_url(args[0], args[2], source='img')
+    try:
+        img = Image.open(BytesIO(args['content']))
+        width, height = img.size
+        nsfw_probability=0
+        if img.mode == "CMYK":
+            img = img.convert("RGB")
+        filename = hashlib.sha512(img.tobytes()).hexdigest() + ".png"
+    except UnidentifiedImageError as e:
+        #SVG using cairo in the future
+        return False
+    except Image.DecompressionBombError as e:
+        return False
+    except OSError:
+        return False
+    if SAVE_ALL_IMAGES:
+        img.save(IMAGES_FOLDER+'/' + filename, "PNG")
+    if CATEGORIZE_NSFW:
+        image = n2.preprocess_image(img, n2.Preprocessing.YAHOO)
+        inputs = np.expand_dims(image, axis=0) 
+        predictions = model.predict(inputs)
+        sfw_probability, nsfw_probability = predictions[0]
+        if nsfw_probability>NSFW_MIN_PROBABILITY:
+            print('porn {} {}'.format(nsfw_probability,args['url']))
+            if SAVE_NSFW:
+                img.save(NSFW_FOLDER +'/'+ filename, "PNG")
+        else:
+            if SAVE_SFW:
+                img.save(SFW_FOLDER +'/' +filename, "PNG")
+    db_insert_if_new_url(url=args['url'],visited='1',content_type=args['content_type'],source=args['source'],isnsfw=float(nsfw_probability),resolution=width*height,parent_host=args['parent_host'])
     return True
 
 @function_for_content_type([r"^audio/midi$"])
 def content_type_midis(args):
-    #download midi
-    if not config.DOWNLOAD_MIDIS:
+    if not DOWNLOAD_MIDIS:
         return True
-    filename=os.path.basename(urlparse(args[0]).path)
-    f = open(config.MIDIS_FOLDER+'/'+filename, "wb")
-    f.write(args[3])
+    filename=os.path.basename(urlparse(args['url']).path)
+    f = open(MIDIS_FOLDER+'/'+filename, "wb")
+    f.write(args['content'])
     f.close()
-    update_url(args[0], args[2], visited=args[1])
+    db_update_url(url=args['url'], content_type=args['content_type'], visited=args['visited'],source='access')
     return True
 
-@function_for_content_type(
-    [
-        r"^adobe/pdf$",        
-        r"^application/pdf$",
-        r"^application/\.pdf$",
-        r"^application/pdfcontent\-length:",
-    ]
-)
+@function_for_content_type(content_type_pdf)
 def content_type_pdfs(args):
-    #download pdfs
-    if not config.DOWNLOAD_PDFS:
+    if not DOWNLOAD_PDFS:
         return True
-    filename=os.path.basename(urlparse(args[0]).path)
-    f = open(config.PDFS_FOLDER+'/'+filename, "wb")
-    f.write(args[3])
+    filename=os.path.basename(urlparse(args['url']).path)
+    f = open(PDFS_FOLDER+'/'+filename, "wb")
+    f.write(args['content'])
     f.close()
-    update_url(args[0], args[2], visited=args[1])
+    db_update_url(url=args['url'], content_type=args['content_type'], visited=args['visited'],source='access')
     return True
 
-@function_for_content_type(
-    [
-        r"^\*/\*$",
-        r"^application/\*$",        
-        r"^application/xml$",
-        r"^application/rar$",
-        r"^application/zip$",
-        r"^application/avi$",
-        r"^application/doc$",
-        r"^application/xls$",        
-        r"^application/rtf$",
-        r"^application/ogg$",
-        r"^application/mp3$",        
-        r"^application/csv$",
-        r"^application/wmv$",    
-        r"^application/epub$",                        
-        r"^application/xlsx$",                
-        r"^application/docx$",        
-        r"^application/text$",        
-        r"^application/json$",
-        r"^application/mobi$",
-        r"^application/gzip$",
-        r"^application/save$",
-        r"^application/null$",
-        r"^application/zlib$",        
-        r"^application/\.zip$",
-        r"^application/\.rar$",
-        r"^application/x\-xz$",
-        r"^application/x\-sh$",
-        r"^application/x\-twb$",
-        r"^application/x\-tar$",
-        r"^application/x\-rar$",
-        r"^application/x\-msi$",
-        r"^application/msword$",
-        r"^application/x\-zip$",
-        r"^application/msword$",
-        r"^application/x\-xar$",                
-        r"^application/unknown$",
-        r"^application/x\-gzip$",
-        r"^application/msexcel$",
-        r"^application/ld\+json$",
-        r"^application/rdf\+xml$",
-        r"^application/download$",
-        r"^application/xml\-dtd$",
-        r"^application/rss\+xml$", 
-        r"^application/x\-bzip2$",
-        r"^application/ms\-excel$",        
-        r"^application/hal\+json$",        
-        r"^application/ttml\+xml$",
-        r"^application/x\-msword$",
-        r"^application/pgp\-keys$",
-        r"^application/epub\+zip$",
-        r"^application/atom\+xml$",
-        r"^application/x\-bibtex$",
-        r"^application/pkix\-crl$", 
-        r"^application/x\-dosexec$",               
-        r"^application/javascript$",
-        r"^application/x\-mpegurl$",
-        r"^application/postscript$",
-        r"^application/xhtml\+xml$",
-        r"^application/x\-msexcel$",
-        r"^application/x\-tar\-gz$",
-        r"^application/pkix\-cert$",
-        r"^application/x\-rss\+xml$",
-        r"^application/pkcs7\-mime$",                         
-        r"^application/x\-xpinstall$",
-        r"^application/x\-troff\-man$",                
-        r"^application/java\-archive$",        
-        r"^application/x\-javascript$",
-        r"^application/x\-msdownload$",
-        r"^application/x\-httpd\-php$",
-        r"^application/octet\-stream$",
-        r"^application/vnd\.ms\-word$",
-        r"^application/x\-executable$", 
-        r"^application/pgp\-signature$",
-        r"^application/vnd\.ms\-excel$",
-        r"^application/force\-download$",
-        r"^application/x\-msdos\-program$",
-        r"^application/x\-iso9660\-image$",
-        r"^application/vnd\.ogc\.wms_xml$",
-        r"^application/x\-x509\-ca\-cert$",                
-        r"^application/x\-ms\-application$",                
-        r"^application/x\-zip\-compressed$",
-        r"^application/x\-rar\-compressed$",
-        r"^application/x\-debian\-package$", 
-        r"^application/privatetempstorage$",        
-        r"^application/x\-httpd\-ea\-php54$",                
-        r"^application/x\-httpd\-ea\-php71$",        
-        r"^application/vnd\.apple\.mpegurl$",
-        r"^application/vnd\.ms\-powerpoint$",
-        r"^application/x\-gtar\-compressed$",
-        r"^application/x\-shockwave\-flash$",
-        r"^application/x\-apple\-diskimage$",
-        r"^application/x\-java\-jnlp\-file$", 
-        r"^application/x\-mobipocket\-ebook$",
-        r"^application/vnd\.ms\-officetheme$",        
-        r"^application/x\-ms\-dos\-executable$",                
-        r"^application/x\-pkcs7\-certificates$",
-        r"^application/x\-research\-info\-systems$",
-        r"^application/vnd\.ms\-word\.document\.12$",                
-        r"^application/vnd\.google\-earth\.kml\+xml$",        
-        r"^application/vnd\.ms\-excel\.openxmlformat$",                 
-        r"^application/vnd\.android\.package\-archive$",
-        r"^application/vnd\.oasis\.opendocument\.text$",        
-        r"^application/x\-zip\-compressedcontent\-length:",  
-        r"^application/vnd\.oasis\.opendocument\.spreadsheet$",
-        r"^application/vnd\.spring\-boot\.actuator\.v3\+json$",                
-        r"^application/vnd\.oasis\.opendocument\.presentation$",
-        r"^application/vnd\.ms\-excel\.sheet\.macroenabled\.12$",  
-        r"^application/vnd\.openxmlformats\-officedocument\.spre$",                
-        r"^application/vnd\.adobe\.air\-application\-installer\-package\+zip$",                
-        r"^application/vnd\.openxmlformats\-officedocument\.spreadsheetml\.sheet$",
-        r"^application/vnd\.openxmlformats\-officedocument\.presentationml\.slideshow",                  
-        r"^application/vnd\.openxmlformats\-officedocument\.wordprocessingml\.document$",
-        r"^application/vnd\.openxmlformats\-officedocument\.wordprocessingml\.template$",                
-        r"^application/vnd\.openxmlformats\-officedocument\.presentationml\.presentation$",
-        r"^audio/ogg$",
-        r"^audio/mp3$",                
-        r"^audio/mp4$",        
-        r"^audio/wav$",        
-        r"^audio/mpeg$",
-        r"^audio/opus$", 
-        r"^audio/x\-rpm$",
-        r"^audio/x\-wav$",
-        r"^audio/unknown$", 
-        r"^audio/x\-scpls$",                 
-        r"^audio/x\-ms\-wma$",
-        r"^audio/x\-mpegurl$",         
-        r"^audio/x\-pn\-realaudio$",         
-        r"^binary/octet\-stream$",
-        r"^model/usd$",
-        r"^multipart/x\-zip$",        
-        r"^multipart/form\-data$",
-        r"^multipart/x\-mixed\-replace$",
-        r"^octet/stream$",        
-        r"^text/xml$",
-        r"^text/css$",
-        r"^text/csv$",
-        r"^text/rtf$",
-        r"^text/x\-sh$",
-        r"^text/vcard$",
-        r"^text/plain$",
-        r"^text/turtle$",
-        r"^text/x\-tex$",
-        r"^text/x\-chdr$",
-        r"^text/x\-vcard$",                
-        r"^text/calendar$",
-        r"^text/directory$",
-        r"^text/x\-bibtex$",
-        r"^text/javascript$",
-        r"^text/x\-vcalendar$",        
-        r"^text/x\-comma\-separated\-values$",
-        r"^text/html, charset=iso\-8859\-1$",        
-        r"^video/mp4$",
-        r"^video/ogg$",
-        r"^video/f4v$", 
-        r"^video/webm$",
-        r"^video/x\-flv$", 
-        r"^video/quicktime$",        
-        r"^video/x\-ms\-wmv$",
-        r"^video/x\-ms\-asf$",
-        r"^video/x\-msvideo$",
-        r"^x\-application/octet\-stream$",
-    ]
-)
+@function_for_content_type(content_type_all_others_regex)
 def content_type_ignore(args):
     # We update as visited.
-    update_url(args[0], args[2], visited=args[1])
+    if db_count_url(args['url']) == 0:
+        db_insert_if_new_url(url=args['url'],visited=args['visited'],content_type=args['content_type'],source=args['source'],parent_host=args['parent_host'])
+    else:
+        db_update_url(url=args['url'],visited=args['visited'],content_type=args['content_type'],words=args['words'],source=args['source'])
     return True
 
 def sanitize_content_type(content_type):
@@ -739,122 +461,104 @@ def sanitize_content_type(content_type):
     content_type = re.sub(r'^"(.*)"$', r"\1", content_type)
     content_type = re.sub(r'^content-type: (.*)"$', r"\1", content_type)
     content_type = re.sub(r'^content-type:(.*)"$', r"\1", content_type)  
+    content_type = re.sub(r'^(.*?);.*$', r"\1",content_type)
     return content_type
 
-def get_page(url):
-    response = read_web(url)
-    if response:
-        content = response[0]
-        content_type = response[1]
-        content_type=sanitize_content_type(content_type)
-        found = False
-        for regex, function in content_type_functions:
-            m = regex.search(content_type)
-            if m:
-                found = True
-                function([url, 1, content_type, content])
-                continue
-        if not found:
-            print("UNKNOWN type -{}- -{}-".format(url, content_type))
-    else:
-        # Page request didn't work
-        print('---------Erro {}'.format(url))
-        update_url(url, "", visited=2)
+def get_page(url,driver):
+    driver = read_web(url,driver)
+    parent_host=urlsplit(url)[1]
+    if driver:
+        for request in driver.requests:
+            if request.response and request.response.headers['Content-Type']:
+                url=request.url
+                host=urlsplit(url)[1]
+                content=decode(request.response.body, request.response.headers.get('Content-Encoding', 'identity'))
+                content_type=request.response.headers['Content-Type']
+                content_type=sanitize_content_type(content_type)
+                if not is_host_block_listed(host) and is_host_allow_listed(host) and not is_url_block_listed(url):
+                    found=False
+                    for regex, function in content_type_functions:
+                        m = regex.search(content_type)
+                        if m:
+                            found = True
+                            function({'url':url,'visited':'1', 'content_type':content_type, 'content':content,'source':'access','words':'','parent_host':parent_host})
+                            continue
+                    if not found:
+                        print("UNKNOWN type -{}- -{}-".format(url, content_type))
 
+def break_after(seconds=60):
+    def timeout_handler(signum, frame):  # Custom signal handler
+        raise TimeoutException
+    def function(function):
+        def wrapper(*args, **kwargs):
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(seconds)
+            try:
+                res = function(*args, **kwargs)
+                signal.alarm(0)  # Clear alarm
+                return res
+            except TimeoutException:
+                print(
+                    "Oops, timeout: {} {} {} {} sec reached.".format(
+                        seconds, function.__name__, args, kwargs
+                    )
+                )
+            return
+        return wrapper
+    return function
 
-# ----------------------------------------------------------------------
+## This "break_after" is a decorator, not intended for timeouts,
+## but for links that take too long downloading, like streamings
+## or large files.
+@break_after(MAX_DOWNLOAD_TIME)
+def read_web(url,driver):
+    try:
+        driver.get(url)
+        return driver
+    except Exception as e:
+        print(e)
+        return False
 
+class TimeoutException(Exception):  # Custom exception class
+    pass
 
-def get_url_count():
-    cur = con.cursor()
-    url_count = cur.execute("select count(url) from urls").fetchone()[0]
-    con.commit()
-    return url_count
-
-
-def get_unique_domain_count():
-    cur = con.cursor()
-    unique_domain_count = cur.execute(
-        "select count(distinct host) from urls"
-    ).fetchone()[0]
-    con.commit()
-    return unique_domain_count
-
-
-def get_image_count():
-    cur = con.cursor()
-    image_count = cur.execute(
-        'select count(host) from urls where source="img"'
-    ).fetchone()[0]
-    con.commit()
-    return image_count
-
-
-def get_visit_count():
-    cur = con.cursor()
-    visit_count = cur.execute(
-        "select count(url) from urls where visited =1"
-    ).fetchone()[0]
-    con.commit()
-    return visit_count
-
-
-def get_email_count():
-    cur = con.cursor()
-    email_count = cur.execute("select count(distinct email) from emails").fetchone()[0]
-    con.commit()
-    return email_count
-
-
-def get_content_type_count():
-    cur = con.cursor()
-    content_type_count = cur.execute(
-        "select content_type,count(content_type) as total from urls group by content_type order by total desc limit 10"
-    ).fetchall()
-    con.commit()
-    return content_type_count
-
-
-def get_domain_count():
-    cur = con.cursor()
-    domain_count = cur.execute(
-        "select host,count(host) as total from urls group by host order by total desc limit 10"
-    ).fetchall()
-    con.commit()
-    return domain_count
-
-
-def stats():
-    url_count = get_url_count()
-    unique_domain_count = get_unique_domain_count()
-    image_count = get_image_count()
-    visit_count = get_visit_count()
-    email_count = get_email_count()
-    print("Top 10 content_type:")
-    for row in get_content_type_count():
-        print("{}".format(row))
-    print("Top 10 domains:")
-    for row in get_domain_count():
-        print("{}".format(row))
-    print(
-        "url_count={} unique_domain_count={} image_count={} visit_count={} email_count={}".format(
-            url_count, unique_domain_count, image_count, visit_count, email_count
-        )
-    )
+def initialize_driver():
+    user_agent = UserAgent().random
+    options = webdriver.ChromeOptions()
+    options.add_argument(f'user-agent={user_agent}')
+    prefs = {"download.default_directory": DIRECT_LINK_DOWNLOAD_FOLDER,}
+    options.add_experimental_option("prefs", prefs)
+    #options.add_argument('--disable-webgl')
+    #options.add_argument('--disable-webrtc')
+    #options.add_argument('--disable-geolocation')
+    #options.add_argument('--disable-gpu')
+    #options.add_argument('--disable-infobars')
+    #options.add_argument('--disable-popup-blocking')
+    #options.add_argument('--blink-settings=imagesEnabled=false')
+    #options.add_argument('--disable-extensions')
+    #options.add_argument('--disable-javascript')
+    #options.add_argument('--disable-dev-shm-usage')
+    #options.add_argument('--proxy-server=http://your-proxy-server:port')
+    #options.add_argument('--proxy-server=http://'+PROXY_HOST+':'PROXY_PORT)
+    driver = webdriver.Chrome(options=options)
+    driver.set_window_size(SELENIUM_WIDTH, SELENIUM_HEIGHT)
+    return driver
 
 con = sqlite3.connect("crawler.db", timeout=60)
-for iteration in range(config.ITERATIONS):
+for iteration in range(ITERATIONS):
+    if CATEGORIZE_NSFW:
+        model = n2.make_open_nsfw_model()
+    driver=initialize_driver()
     random_urls = get_random_unvisited_domains()
     for target_url in random_urls:
         if not is_host_block_listed(target_url[1]) and is_host_allow_listed(target_url[1]) and not is_url_block_listed(target_url[0]):
             try:
                 print(target_url[0])
-                get_page(target_url[0])
-                if config.HUNT_OPEN_DIRECTORIES:
+                del driver.requests
+                get_page(target_url[0],driver)
+                if HUNT_OPEN_DIRECTORIES:
                     insert_directory_tree(target_url[0])
             except UnicodeEncodeError:
                 pass
-    #print("End of iteration {}".format(iteration))
-    #stats()
-    #select 'Visited '|| count(*) from urls  where visited = '1'; select 'Distinct domains ' || count(distinct(host)) from urls ;select 'Total urls ' || count(*) from urls; select 'dirtree ' || count(*) from urls where source ='dirtree'; select 'Is open dir ' || count(*) from urls where isopendir = '1'; select url from urls where isopendir = '1' group by host;
+    driver.quit()
 con.close()
