@@ -426,33 +426,33 @@ def content_type_images(args):
 
 @function_for_content_type([r"^audio/midi$"])
 def content_type_midis(args):
+    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access')
     if not DOWNLOAD_MIDIS:
         return True
     filename=os.path.basename(urlparse(args['url']).path)
     f = open(MIDIS_FOLDER+'/'+filename, "wb")
     f.write(args['content'])
     f.close()
-    db_update_url(url=args['url'], content_type=args['content_type'], visited=args['visited'],source='access')
     return True
 
 @function_for_content_type(content_type_pdf)
 def content_type_pdfs(args):
+    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access')
     if not DOWNLOAD_PDFS:
         return True
     filename=os.path.basename(urlparse(args['url']).path)
     f = open(PDFS_FOLDER+'/'+filename, "wb")
     f.write(args['content'])
     f.close()
-    db_update_url(url=args['url'], content_type=args['content_type'], visited=args['visited'],source='access')
     return True
 
 @function_for_content_type(content_type_all_others_regex)
 def content_type_ignore(args):
     # We update as visited.
     if db_count_url(args['url']) == 0:
-        db_insert_if_new_url(url=args['url'],visited=args['visited'],content_type=args['content_type'],source=args['source'],parent_host=args['parent_host'])
+        db_insert_if_new_url(url=args['url'],visited='1',content_type=args['content_type'],source=args['source'],parent_host=args['parent_host'])
     else:
-        db_update_url(url=args['url'],visited=args['visited'],content_type=args['content_type'],words=args['words'],source=args['source'])
+        db_update_url(url=args['url'],visited='1',content_type=args['content_type'],words=args['words'],source=args['source'])
     return True
 
 def sanitize_content_type(content_type):
@@ -476,6 +476,8 @@ def get_page(url,driver):
                 content_type=request.response.headers['Content-Type']
                 content_type=sanitize_content_type(content_type)
                 if not is_host_block_listed(host) and is_host_allow_listed(host) and not is_url_block_listed(url):
+                    if HUNT_OPEN_DIRECTORIES:
+                        insert_directory_tree(url)
                     found=False
                     for regex, function in content_type_functions:
                         m = regex.search(content_type)
@@ -513,6 +515,8 @@ def break_after(seconds=60):
 @break_after(MAX_DOWNLOAD_TIME)
 def read_web(url,driver):
     try:
+        if url.startswith('http://'):
+            url=HTTPS_EMBED+url
         driver.get(url)
         return driver
     except Exception as e:
@@ -528,6 +532,11 @@ def initialize_driver():
     options.add_argument(f'user-agent={user_agent}')
     prefs = {"download.default_directory": DIRECT_LINK_DOWNLOAD_FOLDER,}
     options.add_experimental_option("prefs", prefs)
+    options.add_argument('--ignore-certificate-errors-spki-list')
+    options.add_argument('--ignore-ssl-errors')
+    options.add_argument("--ignore-certificate-errors")
+    options.add_argument("--disable-web-security")
+    options.add_argument("--allow-running-insecure-content")
     #options.add_argument('--disable-webgl')
     #options.add_argument('--disable-webrtc')
     #options.add_argument('--disable-geolocation')
