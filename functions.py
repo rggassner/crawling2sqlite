@@ -300,6 +300,7 @@ content_type_all_others_regex = [
         r"^text/rtf$",
         r"^text/x-sh$",
         r"^text/json$",
+        r"^text/x-js$",
         r"^text/vcard$",
         r"^text/plain$",
         r"^text/x-tex$",
