@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 SELENIUM_WIDTH=1920
 SELENIUM_HEIGHT=1080
-EMBED_PORT=4443
+EMBED_PORT='4443'
 USE_PROXY=False
 PROXY_HOST='http://10.206.106.192:8123'
 MAX_DOWNLOAD_TIME = 120
@@ -32,7 +32,7 @@ BE_GREEDY=False
 # host_regex_block_list do not crawl these domains. 
 host_regex_block_list = [
     'localhost:4443$',
-    '\.instagram\.com$',
+    '.instagram.com$',
 ]
 
 #do not crawl urls that match any of these regexes
