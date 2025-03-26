@@ -1,4 +1,9 @@
 sudo apt install python3-pip
+python -m venv venv
+source venv/bin/activate
+pip3 install selenium-wire
+pip3 install setuptools
+pip3 install blinker==1.7.0
 pip3 install fake_useragent
 pip3 install selenium
 pip3 install django
