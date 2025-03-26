@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!venv/bin/python3
 SELENIUM_WIDTH=1920
 SELENIUM_HEIGHT=1080
 EMBED_PORT='4443'
