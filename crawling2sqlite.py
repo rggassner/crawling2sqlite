@@ -179,7 +179,7 @@ def sanitize_url(url):
     url = re.sub(r"^\'(.*)\'$", r"\1", url)
     url = re.sub(r'^”(.*)″$', r"\1", url)        
     url = re.sub(r"^(.+)#.*$", r"\1", url)
-    url = re.sub("^www\.", "http://www.", url)
+    url = re.sub("^www.", "http://www.", url)
     if re.search(r"^http:[^/][^/]", url):
         url = re.sub("^http:", "http://", url)
     if re.search(r"^http:/[^/]", url):
@@ -190,10 +190,10 @@ def sanitize_url(url):
         url = re.sub("^https:/", "https://", url)
     url = re.sub("^ps://", "https://", url)          
     url = re.sub("^ttps://", "https://", url)    
-    url = re.sub("^[a-zA-Z\.“\(´]https://", "https://", url)  
-    url = re.sub("^[a-zA-Z\.“\(´]http://", "http://", url)  
-    url = re.sub("^https[a-zA-Z\.“\(´]://", "https://", url)  
-    url = re.sub("^http[\.“\(´]://", "http://", url) 
+    url = re.sub("^[a-zA-Z.“(´]https://", "https://", url)  
+    url = re.sub("^[a-zA-Z.“(´]http://", "http://", url)  
+    url = re.sub("^https[a-zA-Z.“(´]://", "https://", url)  
+    url = re.sub("^http[.“(´]://", "http://", url) 
     url = re.sub("^htto://", "http://", url)  
     url = re.sub("^https: / /", "https://", url)  
     url = re.sub("^://", "https://", url)      
@@ -248,7 +248,7 @@ def get_directory_tree(url):
 
 def is_open_directory(content, content_url):
     host=urlsplit(content_url)[1]
-    pattern=r'<title>Index of /|<h1>Index of /|\[To Parent Directory\]</A>|<title>'+re.escape(host)+' - /</title>|_sort=\'name\';SortDirsAndFilesName\(\);'
+    pattern=r'<title>Index of /|<h1>Index of /|\[To Parent Directory\]</A>|<title>'+re.escape(host)+' - /</title>|_sort=\'name\';SortDirsAndFilesName();'
     if re.findall(pattern,content):
         print('### Is open directory -{}-'.format(content_url))
         db_update_url_isopendir(content_url)
