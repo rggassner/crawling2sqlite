@@ -7,94 +7,136 @@ from tornado import concurrent, gen, httpserver, ioloop, log, web, iostream
 from config import *
 import concurrent.futures
 import ssl, os
+import pymysql
 os.system("openssl req -nodes -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -subj '/CN=mylocalhost'")
 
+def get_db_connection():
+    """Returns a connection to the selected database."""
+    if DATABASE == 'sqlite':
+        return sqlite3.connect(SQLITE_FILE)
+    elif DATABASE == 'mariadb':
+        return pymysql.connect(
+            host=MARIADB_HOST,
+            user=MARIADB_USER,
+            password=MARIADB_PASSWORD,
+            database=MARIADB_DATABASE,
+            cursorclass=pymysql.cursors.Cursor  # Standard cursor
+        )
+    else:
+        raise ValueError("Unsupported database type")
+
+def execute_query(con, query, fetch_one=False, fetch_all=False):
+    """Executes a query and returns results if required."""
+    cur = con.cursor()  # Create cursor without "with"
+    
+    cur.execute(query)
+    
+    if fetch_one:
+        result = cur.fetchone()
+    elif fetch_all:
+        result = cur.fetchall()
+    else:
+        result = None
+
+    con.commit()  # Commit changes if needed
+    cur.close()   # Manually close the cursor (important for SQLite)
+
+    return result
+
 def db_count_urls(con):
-    cur = con.cursor()
-    url_count = cur.execute("select count(url) from urls").fetchone()[0]
-    con.commit()
-    return url_count
+    return execute_query(con, "SELECT COUNT(url) FROM urls", fetch_one=True)[0]
+
 
 def db_get_unique_domain_count(con):
-    cur = con.cursor()
-    unique_domain_count = cur.execute(
-        "select count(distinct host) from urls"
-    ).fetchone()[0]
-    con.commit()
-    return unique_domain_count
+    return execute_query(con, "SELECT COUNT(DISTINCT host) FROM urls", fetch_one=True)[0]
+
 
 def db_get_visit_count(con):
-    cur = con.cursor()
-    visit_count = cur.execute(
-        "select count(url) from urls where visited =1"
-    ).fetchone()[0]
-    con.commit()
-    return visit_count
+    return execute_query(con, "SELECT COUNT(url) FROM urls WHERE visited = 1", fetch_one=True)[0]
+
 
 def db_get_email_count(con):
-    cur = con.cursor()
-    email_count = cur.execute("select count(distinct email) from emails").fetchone()[0]
-    con.commit()
-    return email_count
+    return execute_query(con, "SELECT COUNT(DISTINCT email) FROM emails", fetch_one=True)[0]
+
 
 def db_get_content_type_count(con):
-    cur = con.cursor()
-    content_type_count = cur.execute(
-        "select content_type,count(content_type) as total from urls group by content_type order by total desc limit 10"
-    ).fetchall()
-    con.commit()
-    return content_type_count
+    return execute_query(con, 
+        "SELECT content_type, COUNT(content_type) AS total FROM urls GROUP BY content_type ORDER BY total DESC LIMIT 10",
+        fetch_all=True
+    )
+
 
 def db_get_top_domain(con):
-    cur = con.cursor()
-    domain_count = cur.execute(
-        "select host,count(host) as total from urls group by host order by total desc limit 10"
-    ).fetchall()
-    con.commit()
-    return domain_count
+    return execute_query(con, 
+        "SELECT host, COUNT(host) AS total FROM urls GROUP BY host ORDER BY total DESC LIMIT 10",
+        fetch_all=True
+    )
+
 
 def db_get_porn_domains(con):
-    cur = con.cursor()
-    domain_count = cur.execute(
-        "select a,ph,c from (select avg(isnsfw) as a,parent_host as ph,count(*) as c from urls where isnsfw != '' and resolution >= 224*224 group by parent_host ) where a > .3 and c > 4 order by a"
-    ).fetchall()
-    con.commit()
-    return domain_count
+    if DATABASE == 'mariadb':
+        return execute_query(con, 
+                         """SELECT * FROM (
+    SELECT AVG(isnsfw) AS a, parent_host AS ph, COUNT(*) AS c 
+    FROM urls 
+    WHERE isnsfw IS NOT NULL AND isnsfw != '' AND resolution >= 224*224 
+    GROUP BY parent_host
+) AS subquery_alias
+WHERE a > 0.3 AND c > 4 
+ORDER BY a;""",
+        fetch_all=True
+        )
+    if DATABASE == 'sqlite':
+        return execute_query(con, 
+                          """select a,ph,c from (select avg(isnsfw) as a,parent_host as ph,count(*)
+                             as c from urls where isnsfw != '' and resolution >= 224*224 group by 
+                             parent_host ) where a > .3 and c > 4 order by a""",
+        fetch_all=True
+        )
 
 def db_get_porn_urls(con):
-    cur = con.cursor()
-    domain_count = cur.execute(
-        "select isnsfw, url from urls where resolution >= 224*224 and isnsfw != '' order by isnsfw desc limit 10"
-    ).fetchall()
-    con.commit()
-    return domain_count
+    return execute_query(con, 
+        "SELECT isnsfw, url FROM urls WHERE resolution >= 224*224 AND isnsfw != '' ORDER BY isnsfw DESC LIMIT 10",
+        fetch_all=True
+    )
+
 
 def db_get_open_dir(con):
-    cur = con.cursor()
-    domain_count = cur.execute(
-        "select url from urls where isopendir='1'"
-    ).fetchall()
-    con.commit()
-    return domain_count
+    return execute_query(con, 
+        "SELECT url FROM urls WHERE isopendir = '1'", 
+        fetch_all=True
+    )
+
 
 def db_get_all_hosts(con):
-    cur = con.cursor()
-    domain_count = cur.execute(
-        "select distinct(combined_column) from (SELECT parent_host AS combined_column FROM urls where parent_host != '' UNION ALL SELECT host FROM urls where host != '') "
-    ).fetchall()
-    con.commit()
-    return domain_count
+    if DATABASE == 'mariadb':
+        return execute_query(con, 
+                         """SELECT DISTINCT combined_column 
+FROM (
+    SELECT parent_host AS combined_column FROM urls WHERE parent_host IS NOT NULL AND parent_host != '' 
+    UNION ALL 
+    SELECT host FROM urls WHERE host IS NOT NULL AND host != ''
+) AS subquery_alias;""",
+            fetch_all=True
+        )
+    if DATABASE == 'sqlite':
+        return execute_query(con,
+                         """select distinct(combined_column) from (SELECT parent_host AS combined_column 
+                             FROM urls where parent_host != '' 
+                             UNION ALL SELECT host FROM urls where host != '') """,
+            fetch_all=True
+        )
+
 
 def db_get_all_relations(con):
-    cur = con.cursor()
-    domain_count = cur.execute(
-        "SELECT parent_host,host FROM urls where host !='' and parent_host != ''"
-    ).fetchall()
-    con.commit()
-    return domain_count
+    return execute_query(con, 
+        "SELECT parent_host, host FROM urls WHERE host != '' AND parent_host != ''", 
+        fetch_all=True
+    )
+
 
 def update_data():
-    con = sqlite3.connect("crawler.db", timeout=60)
+    con = get_db_connection()
     network={}
     network['nodes']=[]
     network['links']=[]
@@ -224,6 +266,7 @@ def update_data():
     </html>
     '''.format(db_count_urls(con)))
     f.close()
+    con.close()
 
 class MainHandler(web.RequestHandler):
     def get(self):
