@@ -44,3 +44,13 @@ I´ve found and reported several directory traversal vulnerabilities using these
 - select * from urls where url like '%.zip%' order by url;
 - select * from urls where url like '%upload%' order by url;
 - select * from urls where url like '%register%' order by url;
+
+## Creating the database if using mariadb
+
+```
+CREATE DATABASE crawling2mariadb;  
+CREATE USER 'crawling2mariadb'@'localhost' IDENTIFIED BY 'crawling2mariadb';  
+GRANT ALL PRIVILEGES ON crawling2mariadb.\* TO 'crawling2mariadb'@'localhost';  
+FLUSH PRIVILEGES;  
+EXIT;
+```
