@@ -13,11 +13,12 @@ from bs4 import BeautifulSoup
 from functions import *
 from pathlib import PurePosixPath
 import bs4.builder
-import opennsfw2 as n2
+#import opennsfw2 as n2
 from PIL import Image, UnidentifiedImageError
 import hashlib
 import numpy as np
 import signal
+import pymysql
 from io import BytesIO
 
 url_functions = []
@@ -36,24 +37,80 @@ soup_tag_blocklist = [
     "style",
 ]
 
-def db_create_database(initial_url):
+class DatabaseConnection:
+    def __init__(self, DATABASE="sqlite"):
+        self.DATABASE = DATABASE
+        self.con = None
+        self.cur = None
+        if DATABASE == "sqlite":
+            self.con = sqlite3.connect(SQLITE_FILE)
+            self.con.row_factory = sqlite3.Row  # This makes rows behave like dictionaries
+            self.cur = self.con.cursor()
+        elif DATABASE == "mariadb":
+            self.con = pymysql.connect(
+                host=MARIADB_HOST,
+                user=MARIADB_USER,
+                password=MARIADB_PASSWORD,
+                database=MARIADB_DATABASE,
+                charset='utf8mb4',
+                cursorclass=pymysql.cursors.DictCursor
+            )
+            self.cur = self.con.cursor()
+        else:
+            raise ValueError("Unsupported database.")
+    
+    def commit(self):
+        if self.con:
+            self.con.commit()
+    
+    def close(self):
+        if self.con:
+            self.con.close()
+
+def db_create_database(initial_url, db):
     print("Creating database.")
     try:
         host = urlsplit(initial_url)[1]
-    except ValueError as e:
-        return false
-    con = sqlite3.connect("crawler.db")
-    cur = con.cursor()
-    cur.execute(
-        """CREATE TABLE urls (url text, visited boolean, isopendir boolean, isnsfw real, content_type text, source text, words text, host text, parent_host text, resolution integer, UNIQUE (url))"""
-    )
-    cur.execute("""CREATE TABLE emails (url text, email text, UNIQUE (url,email))""")
-    cur.execute(
-        "INSERT INTO urls (url,visited,isopendir,isnsfw,content_type,source,words,host) VALUES (?,0,0,0,'','href','',?)",
-        (initial_url, host),
-    )
-    con.commit()
-    con.close()
+    except ValueError:
+        return False
+
+    create_urls_table = '''
+    CREATE TABLE IF NOT EXISTS urls (
+        url VARCHAR(2083) NOT NULL,
+        visited BOOLEAN,
+        isopendir BOOLEAN,
+        isnsfw FLOAT,
+        content_type TEXT,
+        source TEXT,
+        words TEXT,
+        host TEXT,
+        parent_host TEXT,
+        resolution INTEGER,
+        UNIQUE (url)
+    )'''
+
+    create_emails_table = '''
+    CREATE TABLE IF NOT EXISTS emails (
+        url VARCHAR(2083) NOT NULL,
+        email TEXT,
+        UNIQUE (url, email)
+    )'''
+
+    db.cur.execute(create_urls_table)
+    db.cur.execute(create_emails_table)
+
+    insert_query = """
+    INSERT INTO urls (url, visited, isopendir, isnsfw, content_type, source, words, host)
+    VALUES (%s, 0, 0, 0, '', 'href', '', %s)
+    """
+    
+    if db.DATABASE == "sqlite":
+        db.cur.execute(insert_query.replace("%s", "?"), (initial_url, host))
+    else:
+        db.cur.execute(insert_query, (initial_url, host))
+    
+    db.commit()
+    return True
 
 ## Verify if host is in a blocklist.
 def is_host_block_listed(url):
@@ -81,90 +138,94 @@ def remove_jsessionid_with_semicolon(url):
     cleaned_url = re.sub(pattern, '', url)
     return cleaned_url
 
-def db_insert_if_new_url(url='', visited='', source='', content_type="", words="",isnsfw='',resolution='',parent_host=''):
+def db_insert_if_new_url(url='', visited='', source='', content_type="", words="", isnsfw='', resolution='', parent_host='', db=None):
     try:
         host = urlsplit(url)[1]
-    except ValueError as e:
+    except ValueError:
         return False
-    url=remove_jsessionid_with_semicolon(url)
-    cur = con.cursor()
-    cur.execute(
-        "insert or ignore into urls (url,visited,content_type,source,words,host,isnsfw,resolution,parent_host) values (?,?,?,?,?,?,?,?,?)",
-        (url, visited, content_type, source, words, host, isnsfw,resolution,parent_host),
-    )
-    con.commit()
+
+    url = remove_jsessionid_with_semicolon(url)
+
+    query = "INSERT OR IGNORE INTO urls (url, visited, content_type, source, words, host, isnsfw, resolution, parent_host) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)" \
+        if db.DATABASE == "sqlite" else "INSERT IGNORE INTO urls (url, visited, content_type, source, words, host, isnsfw, resolution, parent_host) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+
+    db.cur.execute(query, (url, visited, content_type, source, words, host, isnsfw, resolution, parent_host))
+    db.commit()
+
     return True
 
-def db_count_url(url):
-    cur = con.cursor()
-    count_url=cur.execute(
-        "select count(url) from urls where url=(?)",
-        (url,),
-    ).fetchone()[0]
-    con.commit()
-    return count_url
+def db_count_url(url, db):
+    try:
+        query = "SELECT count(url) FROM urls WHERE url = ?" if db.DATABASE == "sqlite" else "SELECT count(url) FROM urls WHERE url = %s"
+        db.cur.execute(query, (url,))
+        count_url = db.cur.fetchone()
+        db.commit()
+        return count_url['count(url)']
+    except (sqlite3.OperationalError, pymysql.MySQLError) as e:
+        print("Error:", e)
+        return 0
 
-def db_insert_email(url='',email=''):
-    cur = con.cursor()
-    cur.execute("insert or ignore into emails (url,email) values (?,?)", (url, email))
-    con.commit()
-    return True
+def db_insert_email(url='', email='', db=None):
+    try:
+        query = "INSERT OR IGNORE INTO emails (url, email) VALUES (?, ?)" if db.DATABASE == "sqlite" else "INSERT IGNORE INTO emails (url, email) VALUES (%s, %s)"
+        db.cur.execute(query, (url, email))
+        db.commit()
+        return True
+    except (sqlite3.OperationalError, pymysql.MySQLError) as e:
+        print("Error:", e)
+        return False
 
-def db_update_url_isopendir(url):
-    cur = con.cursor()
-    cur.execute(
-        "update urls set (isopendir) = (?) where url = ?",
-        ('1', url),
-    )
-    con.commit()
+def db_update_url_isopendir(url, db):
+    try:
+        query = "UPDATE urls SET isopendir = ? WHERE url = ?" if db.DATABASE == "sqlite" else "UPDATE urls SET isopendir = %s WHERE url = %s"
+        db.cur.execute(query, ('1', url))
+        db.commit()
+        return True
+    except (sqlite3.OperationalError, pymysql.MySQLError) as e:
+        print("Error:", e)
+        return False
 
-def db_update_url(url='',content_type='',visited='',words='',source=''):
-    cur = con.cursor()
-    cur.execute(
-        "update urls set (visited,content_type,words,source) = (?,?,?,?) where url = ?",
-        (visited, content_type, words, source, url),
-    )
-    con.commit()
-    if url.endswith('/'):
-        url=url[:-1]
-        cur = con.cursor()
-        cur.execute(
-            "update urls set (visited,content_type,words,source) = (?,?,?,?) where url = ?",
-            (visited, content_type, words, source, url),
-        )
-        con.commit()
+def db_update_url(url='', content_type='', visited='', words='', source='', db=None):
+    try:
+        query = "UPDATE urls SET visited = ?, content_type = ?, words = ?, source = ? WHERE url = ?" if db.DATABASE == "sqlite" else "UPDATE urls SET visited = %s, content_type = %s, words = %s, source = %s WHERE url = %s"
+        db.cur.execute(query, (visited, content_type, words, source, url))
+        db.commit()
 
-##Fast and uses low memory, but hosts
-##with inumerous urls will have higher chances to be
-##selected, biasing the result.
-##def get_random_unvisited_domains():
-##    for i in range(3):
-##        try:
-##            cur = con.cursor()
-##            random_url = cur.execute(
-##                "SELECT url,host FROM urls WHERE rowid > ( ABS(RANDOM()) % (SELECT max(rowid) FROM urls)) and visited=0 and source != 'access' LIMIT 1"
-##            ).fetchall()
-##            break
-##        except sqlite3.OperationalError:
-##            db_create_database(INITIAL_URL)
-##    return random_url
+        if url.endswith('/'):
+            url = url[:-1]
+            db.cur.execute(query, (visited, content_type, words, source, url))
+            db.commit()
 
-#Uses more resources, but will spread the connections 
-#evenly through the hosts. Expect the number of hosts to increase rapidly
-def get_random_unvisited_domains():
-    for i in range(3):
-        try:
-            cur = con.cursor()
-            random_url = cur.execute(
-                "select url,host from (SELECT url,host FROM urls where visited=0 and source!= 'access' order by RANDOM()) group by host order by RANDOM()"
-            ).fetchall()
-            break
-        except sqlite3.OperationalError as e:
-            if "no such table: urls" in str(e):
-                db_create_database(INITIAL_URL)
+        return True
+    except (sqlite3.OperationalError, pymysql.MySQLError) as e:
+        print("Error:", e)
+        return False
+
+def get_random_unvisited_domains(db):
+    try:
+        query = """
+        SELECT url, host FROM (
+            SELECT url, host, ROW_NUMBER() OVER (PARTITION BY host ORDER BY RANDOM()) AS row_num
+            FROM urls WHERE visited = 0 AND source != 'access'
+        ) WHERE row_num = 1 ORDER BY RANDOM();
+        """ if db.DATABASE == "sqlite" else """
+        SELECT url, host FROM (
+            SELECT url, host, ROW_NUMBER() OVER (PARTITION BY host ORDER BY RAND()) AS row_num
+            FROM urls WHERE visited = 0 AND source != 'access'
+        ) AS subquery WHERE row_num = 1 ORDER BY RAND();
+        """
+        
+        db.cur.execute(query)
+        random_url = db.cur.fetchall()
+        return random_url
+    except (sqlite3.OperationalError, pymysql.MySQLError) as e:
+        if "no such table" in str(e) or "Table" in str(e):
+            print("Database tables missing. Creating now...")
+            db_create_database(INITIAL_URL,db=db)
         else:
             print("Error:", e)
-    return random_url
+    return []
+
 
 def sanitize_url(url):
     url = url.strip()
@@ -251,7 +312,7 @@ def is_open_directory(content, content_url):
     pattern=r'<title>Index of /|<h1>Index of /|\[To Parent Directory\]</A>|<title>'+re.escape(host)+' - /</title>|_sort=\'name\';SortDirsAndFilesName();'
     if re.findall(pattern,content):
         print('### Is open directory -{}-'.format(content_url))
-        db_update_url_isopendir(content_url)
+        db_update_url_isopendir(content_url, db)
         return True
 
 def function_for_url(regexp_list):
@@ -273,7 +334,7 @@ def function_for_url(regexp_list):
 def relative_url(args):
     out_url = urljoin(args['parent_url'], args['url'])
     parent_host=urlsplit(args['parent_url'])[1]
-    db_insert_if_new_url(url=out_url, visited=0, source="href",parent_host=parent_host)
+    db_insert_if_new_url(url=out_url, visited=0, source="href",parent_host=parent_host,db=db)
     return True
 
 
@@ -296,7 +357,7 @@ def do_nothing_url(args):
 @function_for_url([r"^https*://", r"^ftp://"])
 def full_url(args):
     parent_host=urlsplit(args['parent_url'])[1]
-    db_insert_if_new_url(url=args['url'], visited='0', source="href",parent_host=parent_host)
+    db_insert_if_new_url(url=args['url'], visited='0', source="href",parent_host=parent_host,db=db)
     return True
 
 
@@ -317,7 +378,7 @@ def email_url(args):
             r"^([A-Za-z0-9]+[.-_])*[A-Za-z0-9]+@[A-Za-z0-9-]+(\.[A-Z|a-z]{2,})+$",
             address,
         ):
-            db_insert_email(url=args['parent_url'], email=address)
+            db_insert_email(url=args['parent_url'], email=address,db=db)
             return True
         else:
             return False
@@ -354,7 +415,7 @@ def get_links(soup, content_url):
                 print("Unexpected URL. Would this work? -{}-".format(out_url))   
                 parent_host=urlsplit(content_url)[1]
                 if BE_GREEDY:
-                    db_insert_if_new_url(url=out_url,visited=0,source="href",content_type='',words='',parent_host=parent_host)                 
+                    db_insert_if_new_url(url=out_url,visited=0,source="href",content_type='',words='',parent_host=parent_host,db=db)
     return True
 
 def function_for_content_type(regexp_list):
@@ -369,7 +430,7 @@ def insert_directory_tree(content_url):
     parent_host=urlsplit(content_url)[1]
     for url in get_directory_tree(content_url):
         url = sanitize_url(url)
-        db_insert_if_new_url(url=url, visited='0',source="dirtree",parent_host=parent_host)                        
+        db_insert_if_new_url(url=url, visited='0',source="dirtree",parent_host=parent_host,db=db)
 
 @function_for_content_type(content_type_html_regex)
 def content_type_download(args):
@@ -387,8 +448,8 @@ def content_type_download(args):
         words = get_words(soup, args['url'])
     else:
         words = ''
-    db_insert_if_new_url(url=args['url'],visited=args['visited'],source=args['source'],content_type=args['content_type'],parent_host=args['parent_host'])
-    db_update_url(url=args['url'],content_type=args['content_type'],visited=args['visited'],words=words,source=args['source'])
+    db_insert_if_new_url(url=args['url'],visited=args['visited'],source=args['source'],content_type=args['content_type'],parent_host=args['parent_host'],db=db)
+    db_update_url(url=args['url'],content_type=args['content_type'],visited=args['visited'],words=words,source=args['source'],db=db)
     return True
 
 @function_for_content_type(content_type_image_regex)
@@ -421,12 +482,12 @@ def content_type_images(args):
         else:
             if SAVE_SFW:
                 img.save(SFW_FOLDER +'/' +filename, "PNG")
-    db_insert_if_new_url(url=args['url'],visited='1',content_type=args['content_type'],source=args['source'],isnsfw=float(nsfw_probability),resolution=width*height,parent_host=args['parent_host'])
+    db_insert_if_new_url(url=args['url'],visited='1',content_type=args['content_type'],source=args['source'],isnsfw=float(nsfw_probability),resolution=width*height,parent_host=args['parent_host'],db=db)
     return True
 
 @function_for_content_type([r"^audio/midi$"])
 def content_type_midis(args):
-    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access')
+    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
     if not DOWNLOAD_MIDIS:
         return True
     filename=os.path.basename(urlparse(args['url']).path)
@@ -437,7 +498,7 @@ def content_type_midis(args):
 
 @function_for_content_type(content_type_pdf)
 def content_type_pdfs(args):
-    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access')
+    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
     if not DOWNLOAD_PDFS:
         return True
     filename=os.path.basename(urlparse(args['url']).path)
@@ -449,10 +510,10 @@ def content_type_pdfs(args):
 @function_for_content_type(content_type_all_others_regex)
 def content_type_ignore(args):
     # We update as visited.
-    if db_count_url(args['url']) == 0:
-        db_insert_if_new_url(url=args['url'],visited='1',content_type=args['content_type'],source=args['source'],parent_host=args['parent_host'])
+    if db_count_url(args['url'],db) == 0:
+        db_insert_if_new_url(url=args['url'],visited='1',content_type=args['content_type'],source=args['source'],parent_host=args['parent_host'],db=db)
     else:
-        db_update_url(url=args['url'],visited='1',content_type=args['content_type'],words=args['words'],source=args['source'])
+        db_update_url(url=args['url'],visited='1',content_type=args['content_type'],words=args['words'],source=args['source'],db=db)
     return True
 
 def sanitize_content_type(content_type):
@@ -553,21 +614,22 @@ def initialize_driver():
     driver.set_window_size(SELENIUM_WIDTH, SELENIUM_HEIGHT)
     return driver
 
-con = sqlite3.connect("crawler.db", timeout=60)
+
+db = DatabaseConnection(DATABASE=DATABASE) 
 for iteration in range(ITERATIONS):
     if CATEGORIZE_NSFW:
         model = n2.make_open_nsfw_model()
     driver=initialize_driver()
-    random_urls = get_random_unvisited_domains()
+    random_urls = get_random_unvisited_domains(db=db)
     for target_url in random_urls:
-        if not is_host_block_listed(target_url[1]) and is_host_allow_listed(target_url[1]) and not is_url_block_listed(target_url[0]):
+        if not is_host_block_listed(target_url['host']) and is_host_allow_listed(target_url['host']) and not is_url_block_listed(target_url['url']):
             try:
-                print(target_url[0])
+                print(target_url['url'])
                 del driver.requests
-                get_page(target_url[0],driver)
+                get_page(target_url['url'],driver)
                 if HUNT_OPEN_DIRECTORIES:
-                    insert_directory_tree(target_url[0])
+                    insert_directory_tree(target_url['url'])
             except UnicodeEncodeError:
                 pass
     driver.quit()
-con.close()
+db.close()
