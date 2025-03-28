@@ -1,6 +1,6 @@
 content_type_html_regex=[
         r"^text/html$",
-        r"^text/html, charset=iso-8859-1$",
+        r"^text/html, charset=.*",
         ]
 
 content_type_pdf = [
