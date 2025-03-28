@@ -185,6 +185,16 @@ def db_update_url_isopendir(url, db):
         print("Error:", e)
         return False
 
+def db_update_url_isnsfw(url, isnsfw, db):
+    try:
+        query = "UPDATE urls SET isnsfw = ? WHERE url = ?" if db.DATABASE == "sqlite" else "UPDATE urls SET isnsfw = %s WHERE url = %s"
+        db.cur.execute(query, (isnsfw, url))
+        db.commit()
+        return True
+    except (sqlite3.OperationalError, pymysql.MySQLError) as e:
+        print("Error:", e)
+        return False
+
 def db_update_url(url='', content_type='', visited='', words='', source='', db=None):
     try:
         query = "UPDATE urls SET visited = ?, content_type = ?, words = ?, source = ? WHERE url = ?" if db.DATABASE == "sqlite" else "UPDATE urls SET visited = %s, content_type = %s, words = %s, source = %s WHERE url = %s"
@@ -402,6 +412,9 @@ def get_links(soup, content_url):
             url = sanitize_url(url)
         found = False
         host=urlsplit(url)[1]
+        #the below block ensures that if link takes to a internal directory of the server, it will use the original host
+        if host == '':
+            host=urlsplit(content_url)[1]
         if not is_host_block_listed(host) and is_host_allow_listed(host) and not is_url_block_listed(url):
             for regex, function in url_functions:
                 m = regex.search(url)
@@ -443,14 +456,12 @@ def content_type_download(args):
         print(e)
         return False
     get_links(soup, args['url'])
-    
     if EXTRACT_WORDS:
         words = get_words(soup, args['url'])
     else:
         words = ''
     db_insert_if_new_url(url=args['url'],visited=args['visited'],source=args['source'],content_type=args['content_type'],parent_host=args['parent_host'],db=db)
     db_update_url(url=args['url'],content_type=args['content_type'],visited=args['visited'],words=words,source=args['source'],db=db)
-    #the following must be the last line
     is_open_directory(str(soup), args['url'])
     return True
 
@@ -465,10 +476,13 @@ def content_type_images(args):
         filename = hashlib.sha512(img.tobytes()).hexdigest() + ".png"
     except UnidentifiedImageError as e:
         #SVG using cairo in the future
+        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
         return False
     except Image.DecompressionBombError as e:
+        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
         return False
     except OSError:
+        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
         return False
     if SAVE_ALL_IMAGES:
         img.save(IMAGES_FOLDER+'/' + filename, "PNG")
@@ -477,6 +491,7 @@ def content_type_images(args):
         inputs = np.expand_dims(image, axis=0) 
         predictions = model.predict(inputs)
         sfw_probability, nsfw_probability = predictions[0]
+        db_update_url_isnsfw(args['url'], nsfw_probability, db)
         if nsfw_probability>NSFW_MIN_PROBABILITY:
             print('porn {} {}'.format(nsfw_probability,args['url']))
             if SAVE_NSFW:
@@ -485,17 +500,19 @@ def content_type_images(args):
             if SAVE_SFW:
                 img.save(SFW_FOLDER +'/' +filename, "PNG")
     db_insert_if_new_url(url=args['url'],visited='1',content_type=args['content_type'],source=args['source'],isnsfw=float(nsfw_probability),resolution=width*height,parent_host=args['parent_host'],db=db)
+    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
     return True
 
 @function_for_content_type([r"^audio/midi$"])
 def content_type_midis(args):
-    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
     if not DOWNLOAD_MIDIS:
+        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
         return True
     filename=os.path.basename(urlparse(args['url']).path)
     f = open(MIDIS_FOLDER+'/'+filename, "wb")
     f.write(args['content'])
     f.close()
+    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
     return True
 
 @function_for_content_type(content_type_pdf)
