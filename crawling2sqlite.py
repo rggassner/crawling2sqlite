@@ -82,7 +82,7 @@ def db_create_database(initial_url, db):
         isnsfw FLOAT,
         content_type TEXT,
         source TEXT,
-        words TEXT,
+        words MEDIUMTEXT,
         host TEXT,
         parent_host TEXT,
         resolution INTEGER,
@@ -443,13 +443,15 @@ def content_type_download(args):
         print(e)
         return False
     get_links(soup, args['url'])
-    is_open_directory(str(soup), args['url'])
+    
     if EXTRACT_WORDS:
         words = get_words(soup, args['url'])
     else:
         words = ''
     db_insert_if_new_url(url=args['url'],visited=args['visited'],source=args['source'],content_type=args['content_type'],parent_host=args['parent_host'],db=db)
     db_update_url(url=args['url'],content_type=args['content_type'],visited=args['visited'],words=words,source=args['source'],db=db)
+    #the following must be the last line
+    is_open_directory(str(soup), args['url'])
     return True
 
 @function_for_content_type(content_type_image_regex)
