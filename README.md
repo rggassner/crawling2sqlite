@@ -1,7 +1,7 @@
 # crawling2sqlite
 Crawl the web and save urls, words, emails, images, pdfs and midis using sqlite for persistence. You an also find open directories, and categorize images checking if they are nsfw. The statistics page is able to show relationship between hosts.
 
-You should be able to run multiple concurrent instance on the same database, but keep in mind that sqlite is not good for that scenario. It is also possible to crawl and download images simultaneously. A folder mounted in ram might help improve performance.
+You should be able to run multiple concurrent instance on the same database, but keep in mind that sqlite is not good for that scenario. It is also possible to crawl and download images simultaneously. A folder mounted in ram might help improve performance. Recently support to mariadb was implemented.
 
 This is a study project I used to learn about decorators, sqlite and beautiful soup, and python in general.
 
