@@ -20,6 +20,8 @@ import numpy as np
 import signal
 import pymysql
 from io import BytesIO
+import argparse
+
 
 url_functions = []
 content_type_functions = []
@@ -344,7 +346,7 @@ def function_for_url(regexp_list):
 def relative_url(args):
     out_url = urljoin(args['parent_url'], args['url'])
     parent_host=urlsplit(args['parent_url'])[1]
-    db_insert_if_new_url(url=out_url, visited=0, source="href",parent_host=parent_host,db=db)
+    db_insert_if_new_url(url=out_url, visited=0, source="href",parent_host=parent_host,db=args['db'])
     return True
 
 
@@ -367,7 +369,7 @@ def do_nothing_url(args):
 @function_for_url([r"^https*://", r"^ftp://"])
 def full_url(args):
     parent_host=urlsplit(args['parent_url'])[1]
-    db_insert_if_new_url(url=args['url'], visited='0', source="href",parent_host=parent_host,db=db)
+    db_insert_if_new_url(url=args['url'], visited='0', source="href",parent_host=parent_host,db=args['db'])
     return True
 
 
@@ -388,7 +390,7 @@ def email_url(args):
             r"^([A-Za-z0-9]+[.-_])*[A-Za-z0-9]+@[A-Za-z0-9-]+(\.[A-Z|a-z]{2,})+$",
             address,
         ):
-            db_insert_email(url=args['parent_url'], email=address,db=db)
+            db_insert_email(url=args['parent_url'], email=address,db=args['db'])
             return True
         else:
             return False
@@ -396,7 +398,7 @@ def email_url(args):
         return False
 
 
-def get_links(soup, content_url):
+def get_links(soup, content_url,db):
     #If you want to grep some patterns, use the code below.
     #pattern=r'"file":{".*?":"(.*?)"}'
     #for script in soup.find_all('script',type="text/javascript"):
@@ -420,7 +422,7 @@ def get_links(soup, content_url):
                 m = regex.search(url)
                 if m:
                     found = True
-                    function({'url':url,'parent_url': content_url})
+                    function({'url':url,'parent_url': content_url,'db':db})
                     continue
             if not found:
                 out_url = urljoin(content_url, url)
@@ -439,7 +441,7 @@ def function_for_content_type(regexp_list):
     return get_content_type_function
 
 
-def insert_directory_tree(content_url):
+def insert_directory_tree(content_url,db):
     parent_host=urlsplit(content_url)[1]
     for url in get_directory_tree(content_url):
         url = sanitize_url(url)
@@ -455,13 +457,13 @@ def content_type_download(args):
     except bs4.builder.ParserRejectedMarkup as e:
         print(e)
         return False
-    get_links(soup, args['url'])
+    get_links(soup, args['url'],args['db'])
     if EXTRACT_WORDS:
         words = get_words(soup, args['url'])
     else:
         words = ''
-    db_insert_if_new_url(url=args['url'],visited=args['visited'],source=args['source'],content_type=args['content_type'],parent_host=args['parent_host'],db=db)
-    db_update_url(url=args['url'],content_type=args['content_type'],visited=args['visited'],words=words,source=args['source'],db=db)
+    db_insert_if_new_url(url=args['url'],visited=args['visited'],source=args['source'],content_type=args['content_type'],parent_host=args['parent_host'],db=args['db'])
+    db_update_url(url=args['url'],content_type=args['content_type'],visited=args['visited'],words=words,source=args['source'],db=args['db'])
     is_open_directory(str(soup), args['url'])
     return True
 
@@ -476,13 +478,13 @@ def content_type_images(args):
         filename = hashlib.sha512(img.tobytes()).hexdigest() + ".png"
     except UnidentifiedImageError as e:
         #SVG using cairo in the future
-        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
+        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=args['db'])
         return False
     except Image.DecompressionBombError as e:
-        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
+        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=args['db'])
         return False
     except OSError:
-        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
+        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=args['db'])
         return False
     if SAVE_ALL_IMAGES:
         img.save(IMAGES_FOLDER+'/' + filename, "PNG")
@@ -499,25 +501,25 @@ def content_type_images(args):
         else:
             if SAVE_SFW:
                 img.save(SFW_FOLDER +'/' +filename, "PNG")
-    db_insert_if_new_url(url=args['url'],visited='1',content_type=args['content_type'],source=args['source'],isnsfw=float(nsfw_probability),resolution=width*height,parent_host=args['parent_host'],db=db)
-    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
+    db_insert_if_new_url(url=args['url'],visited='1',content_type=args['content_type'],source=args['source'],isnsfw=float(nsfw_probability),resolution=width*height,parent_host=args['parent_host'],db=args['db'])
+    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=args['db'])
     return True
 
 @function_for_content_type([r"^audio/midi$"])
 def content_type_midis(args):
     if not DOWNLOAD_MIDIS:
-        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
+        db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=args['db'])
         return True
     filename=os.path.basename(urlparse(args['url']).path)
     f = open(MIDIS_FOLDER+'/'+filename, "wb")
     f.write(args['content'])
     f.close()
-    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
+    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=args['db'])
     return True
 
 @function_for_content_type(content_type_pdf)
 def content_type_pdfs(args):
-    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=db)
+    db_update_url(url=args['url'], content_type=args['content_type'], visited='1',source='access',db=args['db'])
     if not DOWNLOAD_PDFS:
         return True
     filename=os.path.basename(urlparse(args['url']).path)
@@ -529,10 +531,10 @@ def content_type_pdfs(args):
 @function_for_content_type(content_type_all_others_regex)
 def content_type_ignore(args):
     # We update as visited.
-    if db_count_url(args['url'],db) == 0:
-        db_insert_if_new_url(url=args['url'],visited='1',content_type=args['content_type'],source=args['source'],parent_host=args['parent_host'],db=db)
+    if db_count_url(args['url'],args['db']) == 0:
+        db_insert_if_new_url(url=args['url'],visited='1',content_type=args['content_type'],source=args['source'],parent_host=args['parent_host'],db=args['db'])
     else:
-        db_update_url(url=args['url'],visited='1',content_type=args['content_type'],words=args['words'],source=args['source'],db=db)
+        db_update_url(url=args['url'],visited='1',content_type=args['content_type'],words=args['words'],source=args['source'],db=args['db'])
     return True
 
 def sanitize_content_type(content_type):
@@ -544,7 +546,7 @@ def sanitize_content_type(content_type):
     content_type = re.sub(r'^(.*?);.*$', r"\1",content_type)
     return content_type
 
-def get_page(url,driver):
+def get_page(url,driver,db):
     driver = read_web(url,driver)
     parent_host=urlsplit(url)[1]
     if driver:
@@ -557,13 +559,13 @@ def get_page(url,driver):
                 content_type=sanitize_content_type(content_type)
                 if not is_host_block_listed(host) and is_host_allow_listed(host) and not is_url_block_listed(url):
                     if HUNT_OPEN_DIRECTORIES:
-                        insert_directory_tree(url)
+                        insert_directory_tree(url,db)
                     found=False
                     for regex, function in content_type_functions:
                         m = regex.search(content_type)
                         if m:
                             found = True
-                            function({'url':url,'visited':'1', 'content_type':content_type, 'content':content,'source':'access','words':'','parent_host':parent_host})
+                            function({'url':url,'visited':'1', 'content_type':content_type, 'content':content,'source':'access','words':'','parent_host':parent_host,'db':db})
                             continue
                     if not found:
                         print("UNKNOWN type -{}- -{}-".format(url, content_type))
@@ -634,21 +636,57 @@ def initialize_driver():
     return driver
 
 
-db = DatabaseConnection(DATABASE=DATABASE) 
-for iteration in range(ITERATIONS):
-    if CATEGORIZE_NSFW:
-        model = n2.make_open_nsfw_model()
-    driver=initialize_driver()
-    random_urls = get_random_unvisited_domains(db=db)
-    for target_url in random_urls:
-        if not is_host_block_listed(target_url['host']) and is_host_allow_listed(target_url['host']) and not is_url_block_listed(target_url['url']):
-            try:
-                print(target_url['url'])
-                del driver.requests
-                get_page(target_url['url'],driver)
-                if HUNT_OPEN_DIRECTORIES:
-                    insert_directory_tree(target_url['url'])
-            except UnicodeEncodeError:
-                pass
-    driver.quit()
-db.close()
+def crawler(db):
+    for iteration in range(ITERATIONS):
+        if CATEGORIZE_NSFW:
+            model = n2.make_open_nsfw_model()
+        driver = initialize_driver()
+        random_urls = get_random_unvisited_domains(db=db)
+        for target_url in random_urls:
+            if (
+                not is_host_block_listed(target_url['host']) and
+                is_host_allow_listed(target_url['host']) and
+                not is_url_block_listed(target_url['url'])
+            ):
+                try:
+                    print(target_url['url'])
+                    del driver.requests
+                    get_page(target_url['url'], driver,db)
+                    if HUNT_OPEN_DIRECTORIES:
+                        insert_directory_tree(target_url['url'],db)
+                except UnicodeEncodeError:
+                    pass
+        driver.quit()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="URL scanner and inserter.")
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=["insert", "run"],
+        default="run",
+        help="Choose 'insert' to insert a URL or 'run' to execute the crawler"
+    )
+    parser.add_argument(
+        "url",
+        nargs="?",
+        help="The URL to insert (used with 'insert' command)"
+    )
+
+    args = parser.parse_args()
+    db = DatabaseConnection(DATABASE=DATABASE)
+
+    if args.command == "insert":
+        if not args.url:
+            print("Error: Please provide a URL to insert.")
+        else:
+            db_insert_if_new_url(url=args.url, visited=0, source='', content_type="", words="", isnsfw='', resolution='', parent_host='', db=db)
+    else:
+        crawler(db)
+
+    db.close()
+
+if __name__ == "__main__":
+    main()
+
